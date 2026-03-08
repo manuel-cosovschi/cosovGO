@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { listAllProducts, toggleProductActive } from '@/actions/products';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { formatPrice } from '@/lib/utils';
 import type { Product } from '@/types';
-import { Plus, Pencil } from 'lucide-react';
+import { Plus, Pencil, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function ProductosPage() {
@@ -56,6 +57,7 @@ export default function ProductosPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-stone-200 bg-stone-50">
                 <tr>
+                  <th className="px-4 py-3 text-left font-medium text-stone-500 w-16">Foto</th>
                   <th className="px-4 py-3 text-left font-medium text-stone-500">Nombre</th>
                   <th className="px-4 py-3 text-left font-medium text-stone-500">Categoría</th>
                   <th className="px-4 py-3 text-left font-medium text-stone-500">Precio</th>
@@ -66,6 +68,21 @@ export default function ProductosPage() {
               <tbody className="divide-y divide-stone-200">
                 {products.map((product) => (
                   <tr key={product.id} className="hover:bg-stone-50">
+                    <td className="px-4 py-2">
+                      {product.image_url ? (
+                        <Image
+                          src={product.image_url}
+                          alt={product.name}
+                          width={48}
+                          height={48}
+                          className="h-12 w-12 rounded-md object-cover border border-stone-200"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-md bg-stone-100 border border-stone-200">
+                          <ImageIcon className="h-5 w-5 text-stone-300" />
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-medium text-stone-900">{product.name}</td>
                     <td className="px-4 py-3 text-stone-600">
                       {product.category?.name || '—'}
