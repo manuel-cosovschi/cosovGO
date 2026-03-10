@@ -60,9 +60,10 @@ export function ProductForm({ product, categories }: ProductFormProps) {
   const onSubmit = async (data: ProductFormValues) => {
     setIsSubmitting(true);
     try {
+      const cleanData = { ...data, category_id: data.category_id ?? undefined, image_url: data.image_url ?? undefined };
       const result = isEditing
-        ? await updateProduct(product.id, data)
-        : await createProduct(data);
+        ? await updateProduct(product.id, cleanData)
+        : await createProduct(cleanData);
 
       if (result.success) {
         toast.success(isEditing ? 'Producto actualizado' : 'Producto creado');
