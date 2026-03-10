@@ -42,10 +42,13 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="mt-8 border-t border-stone-200 pt-8 text-center">
+        <div className="mt-8 border-t border-stone-200 pt-8 flex items-center justify-between">
           <p className="text-xs text-stone-400">
             &copy; {new Date().getFullYear()} COSOV. Todos los derechos reservados.
           </p>
+          <Link href="/admin" className="text-xs text-stone-300 hover:text-stone-500 transition-colors">
+            Admin
+          </Link>
         </div>
       </div>
     </footer>
