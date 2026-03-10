@@ -3,7 +3,7 @@ import type { Order, OrderItem, OrderStatus } from '@/types';
 import { ORDER_STATUS_LABELS } from '@/types';
 import { formatPrice, formatDate } from './utils';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const FROM_EMAIL = process.env.FROM_EMAIL || 'pedidos@cosov.com.ar';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'valentina@cosov.com.ar';
 
@@ -16,6 +16,7 @@ export async function sendOrderConfirmation(
     .map((i) => `• ${i.item_name} x${i.quantity} — ${formatPrice(i.subtotal)}`)
     .join('\n');
 
+  if (!resend) return;
   await resend.emails.send({
     from: `COSOV. Pedidos <${FROM_EMAIL}>`,
     to: toEmail,
@@ -45,6 +46,7 @@ export async function sendNewOrderNotification(
     .map((i) => `• ${i.item_name} x${i.quantity}`)
     .join('\n');
 
+  if (!resend) return;
   await resend.emails.send({
     from: `COSOV. Sistema <${FROM_EMAIL}>`,
     to: ADMIN_EMAIL,
@@ -82,6 +84,7 @@ export async function sendOrderStatusUpdate(
 ) {
   const statusLabel = ORDER_STATUS_LABELS[data.newStatus];
 
+  if (!resend) return;
   await resend.emails.send({
     from: `COSOV. Pedidos <${FROM_EMAIL}>`,
     to: toEmail,
