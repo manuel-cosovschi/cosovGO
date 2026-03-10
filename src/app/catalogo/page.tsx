@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
@@ -9,7 +9,7 @@ import { CategoryFilter } from '@/components/catalog/category-filter';
 import { getActiveCategories, getActiveProducts } from '@/actions/catalog';
 import type { Product, Category } from '@/types';
 
-export default function CatalogoPage() {
+function CatalogoContent() {
   const searchParams = useSearchParams();
   const categoriaParam = searchParams.get('categoria');
 
@@ -61,5 +61,17 @@ export default function CatalogoPage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function CatalogoPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-stone-200 border-t-stone-900" />
+      </div>
+    }>
+      <CatalogoContent />
+    </Suspense>
   );
 }
