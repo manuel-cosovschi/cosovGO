@@ -254,6 +254,109 @@ export interface ProductFilters {
   search?: string;
 }
 
+// === Inventario / Stock ===
+
+export const STOCK_UNITS = ['kg', 'g', 'l', 'ml', 'unidad', 'docena', 'caja', 'paquete'] as const;
+export type StockUnit = (typeof STOCK_UNITS)[number];
+
+export const MOVEMENT_TYPES = [
+  'purchase',
+  'production',
+  'order_deduction',
+  'production_consumption',
+  'adjustment',
+  'waste',
+] as const;
+export type MovementType = (typeof MOVEMENT_TYPES)[number];
+
+export const MOVEMENT_TYPE_LABELS: Record<MovementType, string> = {
+  purchase: 'Compra',
+  production: 'Producción',
+  order_deduction: 'Pedido',
+  production_consumption: 'Consumo producción',
+  adjustment: 'Ajuste manual',
+  waste: 'Merma / pérdida',
+};
+
+export interface Ingredient {
+  id: string;
+  name: string;
+  unit: string;
+  stock_quantity: number;
+  min_stock_quantity: number;
+  cost_per_unit: number;
+  supplier: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecipeItem {
+  id: string;
+  product_id: string;
+  ingredient_id: string;
+  quantity_per_batch: number;
+  ingredient?: Ingredient;
+}
+
+export interface StockMovement {
+  id: string;
+  reference_type: 'ingredient' | 'product';
+  reference_id: string;
+  movement_type: MovementType;
+  quantity: number;
+  unit_cost: number | null;
+  order_id: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface CreateIngredientInput {
+  name: string;
+  unit: string;
+  stock_quantity?: number;
+  min_stock_quantity?: number;
+  cost_per_unit?: number;
+  supplier?: string;
+  notes?: string;
+}
+
+export interface UpdateIngredientInput extends Partial<CreateIngredientInput> {
+  is_active?: boolean;
+}
+
+export interface StockAdjustment {
+  new_quantity: number;
+  notes: string;
+}
+
+export interface StockAlert {
+  type: 'low_ingredient' | 'low_product' | 'missing_recipe' | 'ingredient_needed';
+  severity: 'warning' | 'critical';
+  message: string;
+  reference_id: string;
+  reference_name: string;
+}
+
+export interface InventoryValuation {
+  ingredients_value: number;
+  products_value: number;
+  committed_cost: number;
+  total_value: number;
+}
+
+export interface PurchaseSuggestion {
+  ingredient_id: string;
+  ingredient_name: string;
+  unit: string;
+  current_stock: number;
+  needed: number;
+  to_buy: number;
+  estimated_cost: number;
+}
+
 // === Dashboard ===
 
 export interface DashboardStats {
@@ -263,12 +366,17 @@ export interface DashboardStats {
   in_production: number;
   ready_for_delivery: number;
   recent_orders: Order[];
+  // v2: stock
+  alerts?: StockAlert[];
+  valuation?: InventoryValuation;
+  low_ingredients_count?: number;
+  low_products_count?: number;
 }
 
 // === Carrito (client-side) ===
 
 export interface CartItem {
-  id: string; // product_id or package_id
+  id: string;
   type: 'product' | 'package';
   name: string;
   price: number;
@@ -276,4 +384,18 @@ export interface CartItem {
   image_url: string | null;
   min_advance_hours: number | null;
   sale_unit: string;
+}
+
+// === Tracking de pedido (público) ===
+
+export interface OrderTracking {
+  order_number: number;
+  status: OrderStatus;
+  business_name: string;
+  delivery_date: string;
+  delivery_method: DeliveryMethod;
+  items: { name: string; quantity: number; unit_price: number; subtotal: number }[];
+  subtotal: number;
+  timeline: { status: string; date: string; notes: string | null }[];
+  created_at: string;
 }

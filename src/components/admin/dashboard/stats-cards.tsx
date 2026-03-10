@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ClipboardList, Clock, ChefHat, Truck } from 'lucide-react';
+import { ClipboardList, Clock, ChefHat, Truck, AlertTriangle, DollarSign } from 'lucide-react';
+import { formatPrice } from '@/lib/utils';
 import type { DashboardStats } from '@/types';
 
 interface StatsCardsProps {
@@ -10,32 +11,44 @@ export function StatsCards({ stats }: StatsCardsProps) {
   const cards = [
     {
       title: 'Pedidos hoy',
-      value: stats.orders_today,
+      value: String(stats.orders_today),
       icon: ClipboardList,
       color: 'text-blue-600',
     },
     {
       title: 'Pendientes de revisión',
-      value: stats.pending_review,
+      value: String(stats.pending_review),
       icon: Clock,
       color: 'text-yellow-600',
     },
     {
       title: 'En producción',
-      value: stats.in_production,
+      value: String(stats.in_production),
       icon: ChefHat,
       color: 'text-orange-600',
     },
     {
       title: 'Listos para entrega',
-      value: stats.ready_for_delivery,
+      value: String(stats.ready_for_delivery),
       icon: Truck,
       color: 'text-emerald-600',
+    },
+    {
+      title: 'Inventario total',
+      value: formatPrice(stats.valuation?.total_value || 0),
+      icon: DollarSign,
+      color: 'text-stone-600',
+    },
+    {
+      title: 'Alertas de stock',
+      value: String((stats.low_ingredients_count || 0) + (stats.low_products_count || 0)),
+      icon: AlertTriangle,
+      color: (stats.low_ingredients_count || 0) + (stats.low_products_count || 0) > 0 ? 'text-red-600' : 'text-stone-400',
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {cards.map((card) => (
         <Card key={card.title}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

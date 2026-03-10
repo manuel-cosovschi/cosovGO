@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { VALID_TRANSITIONS, ORDER_STATUS_LABELS, type OrderStatus } from '@/types';
 import { updateOrderStatus } from '@/actions/orders';
+import { approveOrderWithStockImpact } from '@/actions/inventory';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface OrderStatusActionsProps {
   orderId: string;
@@ -15,6 +17,7 @@ interface OrderStatusActionsProps {
 
 export function OrderStatusActions({ orderId, currentStatus, onStatusChange }: OrderStatusActionsProps) {
   const [loading, setLoading] = useState<string | null>(null);
+  const router = useRouter();
   const transitions = VALID_TRANSITIONS[currentStatus];
 
   if (transitions.length === 0) return null;
@@ -22,12 +25,28 @@ export function OrderStatusActions({ orderId, currentStatus, onStatusChange }: O
   const handleStatusChange = async (newStatus: OrderStatus) => {
     setLoading(newStatus);
     try {
-      const result = await updateOrderStatus(orderId, newStatus);
-      if (result.success) {
-        toast.success(`Estado actualizado a "${ORDER_STATUS_LABELS[newStatus]}"`);
-        onStatusChange?.();
+      // Use stock-aware approval when transitioning to 'approved'
+      if (newStatus === 'approved') {
+        const result = await approveOrderWithStockImpact(orderId);
+        if (result.success) {
+          toast.success('Pedido aprobado');
+          if (result.alerts && result.alerts.length > 0) {
+            result.alerts.forEach((alert) => toast.warning(alert, { duration: 8000 }));
+          }
+          onStatusChange?.();
+          router.refresh();
+        } else {
+          toast.error(result.error || 'Error al aprobar');
+        }
       } else {
-        toast.error(result.error || 'Error al cambiar estado');
+        const result = await updateOrderStatus(orderId, newStatus);
+        if (result.success) {
+          toast.success(`Estado actualizado a "${ORDER_STATUS_LABELS[newStatus]}"`);
+          onStatusChange?.();
+          router.refresh();
+        } else {
+          toast.error(result.error || 'Error al cambiar estado');
+        }
       }
     } catch {
       toast.error('Error al cambiar estado');
@@ -53,7 +72,7 @@ export function OrderStatusActions({ orderId, currentStatus, onStatusChange }: O
           onClick={() => handleStatusChange(status)}
         >
           {loading === status && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-          {ORDER_STATUS_LABELS[status]}
+          {status === 'approved' ? 'Aprobar (con stock)' : ORDER_STATUS_LABELS[status]}
         </Button>
       ))}
     </div>

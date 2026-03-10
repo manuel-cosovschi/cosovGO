@@ -12,6 +12,8 @@ import {
   LogOut,
   Menu,
   X,
+  Egg,
+  BarChart3,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -24,6 +26,8 @@ const sidebarLinks = [
   { href: '/admin/productos', label: 'Productos', icon: Package },
   { href: '/admin/paquetes', label: 'Paquetes', icon: BoxesIcon },
   { href: '/admin/categorias', label: 'Categorías', icon: TagIcon },
+  { href: '/admin/ingredientes', label: 'Ingredientes', icon: Egg },
+  { href: '/admin/inventario', label: 'Inventario', icon: BarChart3 },
   { href: '/admin/configuracion', label: 'Configuración', icon: Settings },
 ];
 
