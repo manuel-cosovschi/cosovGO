@@ -25,11 +25,14 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // Use getSession() instead of getUser() to avoid HTTP call to Supabase
+  // getSession() reads the JWT locally - much faster, avoids MIDDLEWARE_INVOCATION_TIMEOUT
+  // Actual user verification happens in server components/actions
+  const { data: { session } } = await supabase.auth.getSession();
 
   // Protect admin routes (except login)
   if (request.nextUrl.pathname.startsWith('/admin') && !request.nextUrl.pathname.startsWith('/admin/login')) {
-    if (!user) {
+    if (!session) {
       const url = request.nextUrl.clone();
       url.pathname = '/admin/login';
       return NextResponse.redirect(url);
@@ -37,7 +40,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Redirect logged-in users away from login
-  if (request.nextUrl.pathname === '/admin/login' && user) {
+  if (request.nextUrl.pathname === '/admin/login' && session) {
     const url = request.nextUrl.clone();
     url.pathname = '/admin';
     return NextResponse.redirect(url);
