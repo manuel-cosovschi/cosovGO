@@ -169,19 +169,6 @@ export function ProductForm({ product, categories }: ProductFormProps) {
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="min_advance_hours">Anticipación especial (horas)</Label>
-          <Input
-            id="min_advance_hours"
-            type="number"
-            {...register('min_advance_hours', { valueAsNumber: true })}
-            placeholder="Dejar vacío para usar las 48h estándar"
-          />
-          <p className="text-xs text-stone-400">
-            Solo completar si este producto necesita más de 48h
-          </p>
-        </div>
-
         <div className="space-y-2 sm:col-span-2">
           <Label>Foto principal</Label>
           <ImageUpload

@@ -27,7 +27,6 @@ export default function ConfiguracionPage() {
     setSaving(true);
     try {
       const result = await updateSettings({
-        min_advance_hours: settings.min_advance_hours || '48',
         admin_email: JSON.stringify(settings.admin_email || ''),
         business_name: JSON.stringify(settings.business_name || 'COSOV.'),
         business_phone: JSON.stringify(settings.business_phone || ''),
@@ -69,27 +68,6 @@ export default function ConfiguracionPage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <h1 className="text-2xl font-bold text-stone-900">Configuración</h1>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Regla de anticipación</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="min_advance_hours">Horas mínimas de anticipación</Label>
-            <Input
-              id="min_advance_hours"
-              type="number"
-              value={settings.min_advance_hours || '48'}
-              onChange={(e) => updateField('min_advance_hours', e.target.value)}
-            />
-            <p className="text-xs text-stone-400">
-              Valor actual: {settings.min_advance_hours || 48} horas. Los clientes no pueden
-              seleccionar fechas de entrega con menos anticipación.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>

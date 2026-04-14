@@ -72,11 +72,6 @@ export function ProductCard({ product }: ProductCardProps) {
             <Plus className="h-4 w-4" />
           </Button>
         </div>
-        {product.min_advance_hours && product.min_advance_hours > 48 && (
-          <p className="mt-2 text-xs text-amber-600">
-            Requiere {product.min_advance_hours}h de anticipación
-          </p>
-        )}
       </div>
     </Link>
   );

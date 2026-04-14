@@ -85,15 +85,6 @@ export default async function ProductDetailPage({ params }: Props) {
               </div>
             )}
 
-            {product.min_advance_hours && product.min_advance_hours > 48 && (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 p-4">
-                <p className="text-sm text-amber-800">
-                  Este producto requiere <strong>{product.min_advance_hours} horas</strong> de
-                  anticipación mínima.
-                </p>
-              </div>
-            )}
-
             {product.min_quantity > 1 && (
               <p className="text-sm text-stone-500">
                 Pedido mínimo: {product.min_quantity} {product.sale_unit}(s)
