@@ -34,10 +34,9 @@ export function Footer() {
           </div>
 
           <div>
-            <h4 className="text-sm font-semibold text-stone-900">Importante</h4>
+            <h4 className="text-sm font-semibold text-stone-900">Contacto</h4>
             <p className="mt-3 text-sm text-stone-500">
-              Los pedidos deben realizarse con un mínimo de <strong>48 horas de anticipación</strong> para
-              garantizar disponibilidad y calidad.
+              Consultanos cualquier duda sobre tu pedido por email o teléfono.
             </p>
           </div>
         </div>

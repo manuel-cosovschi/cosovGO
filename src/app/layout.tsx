@@ -10,7 +10,7 @@ const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfa
 export const metadata: Metadata = {
   title: 'COSOV. | Pastelería artesanal para cafeterías y eventos',
   description:
-    'Realizá tu pedido de pastelería artesanal para cafeterías, locales y eventos. Mínimo 48 horas de anticipación.',
+    'Realizá tu pedido de pastelería artesanal para cafeterías, locales y eventos.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
