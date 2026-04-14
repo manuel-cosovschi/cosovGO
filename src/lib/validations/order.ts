@@ -19,7 +19,21 @@ export const orderSchema = z.object({
   }),
   address: z.string().optional(),
   city: z.string().optional(),
-  delivery_date: z.string().min(1, 'La fecha de entrega es obligatoria'),
+  delivery_date: z
+    .string()
+    .min(1, 'La fecha de entrega es obligatoria')
+    .refine(
+      (v) => {
+        // Parse YYYY-MM-DD como fecha local (no UTC) y comparar contra hoy local.
+        const [y, m, d] = v.split('-').map(Number);
+        if (!y || !m || !d) return false;
+        const picked = new Date(y, m - 1, d);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return picked.getTime() >= today.getTime();
+      },
+      { message: 'La fecha de entrega no puede ser anterior a hoy' }
+    ),
   observations: z.string().optional(),
   requires_invoice: z.boolean().optional(),
   invoice_data: z.record(z.unknown()).optional(),

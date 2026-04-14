@@ -104,16 +104,56 @@ export async function sendOrderStatusUpdate(
 ) {
   const statusLabel = ORDER_STATUS_LABELS[data.newStatus];
 
+  // Mensaje específico según el estado nuevo — más cálido que un genérico.
+  const bodyByStatus: Partial<Record<OrderStatus, { subject: string; intro: string }>> = {
+    approved: {
+      subject: `¡Tu pedido #${data.orderNumber} fue confirmado!`,
+      intro:
+        'Confirmamos que vamos a hacer tu pedido. Ya empezamos la producción y te vamos a avisar cuando esté listo.',
+    },
+    rejected: {
+      subject: `Tu pedido #${data.orderNumber} no pudo realizarse`,
+      intro:
+        'Lamentablemente no vamos a poder hacer tu pedido. Si tenés dudas, respondenos este mail y te contamos.',
+    },
+    in_production: {
+      subject: `Tu pedido #${data.orderNumber} está en producción`,
+      intro: 'Ya estamos preparando todo para vos.',
+    },
+    ready: {
+      subject: `Tu pedido #${data.orderNumber} está listo`,
+      intro:
+        'Tu pedido ya está listo para la entrega o el retiro acordado.',
+    },
+    shipped: {
+      subject: `Tu pedido #${data.orderNumber} salió para entrega`,
+      intro: 'Salió rumbo a la dirección de entrega.',
+    },
+    delivered: {
+      subject: `Tu pedido #${data.orderNumber} fue entregado`,
+      intro: '¡Esperamos que lo disfrutes! Gracias por elegirnos.',
+    },
+    cancelled: {
+      subject: `Tu pedido #${data.orderNumber} fue cancelado`,
+      intro: 'El pedido quedó cancelado. Cualquier duda, respondenos este mail.',
+    },
+  };
+
+  const tpl = bodyByStatus[data.newStatus] ?? {
+    subject: `Tu pedido #${data.orderNumber} — ${statusLabel}`,
+    intro: `Tu pedido #${data.orderNumber} cambió de estado a: ${statusLabel}`,
+  };
+
   if (!resend) return;
   await resend.emails.send({
     from: `COSOV. Pedidos <${FROM_EMAIL}>`,
     to: toEmail,
-    subject: `Tu pedido #${data.orderNumber} — ${statusLabel}`,
+    subject: tpl.subject,
     text: `¡Hola ${data.contactName}!
 
-Tu pedido #${data.orderNumber} cambió de estado a: ${statusLabel}
+${tpl.intro}
 
-${data.notes ? `Nota: ${data.notes}` : ''}
+${data.notes ? `Nota de COSOV.: ${data.notes}` : ''}
 
 ¡Gracias por elegir COSOV.!`,
   });

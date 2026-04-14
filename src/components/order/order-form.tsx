@@ -20,6 +20,15 @@ export function OrderForm() {
   const { items, subtotal, clearCart } = useCart();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // YYYY-MM-DD en hora local, para el atributo `min` del date input.
+  const todayISO = (() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  })();
+
   const {
     register,
     handleSubmit,
@@ -150,6 +159,7 @@ export function OrderForm() {
             <Input
               id="delivery_date"
               type="date"
+              min={todayISO}
               {...register('delivery_date')}
             />
             {errors.delivery_date && (
