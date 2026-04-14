@@ -5,7 +5,7 @@ import { formatPrice, formatDate } from './utils';
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const FROM_EMAIL = process.env.FROM_EMAIL || 'pedidos@cosov.com.ar';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'valentina@cosov.com.ar';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'valencosovschi@Hotmail.com';
 
 export async function sendOrderConfirmation(
   toEmail: string,
@@ -50,11 +50,10 @@ export async function sendNewOrderNotification(
   await resend.emails.send({
     from: `COSOV. Sistema <${FROM_EMAIL}>`,
     to: ADMIN_EMAIL,
-    subject: `Nuevo pedido #${order.order_number} — ${order.business_name}`,
+    subject: `Nuevo pedido #${order.order_number} — ${order.contact_name || order.business_name}`,
     text: `Nuevo pedido recibido:
 
-Cliente: ${order.business_name}
-Contacto: ${order.contact_name}
+Cliente: ${order.contact_name || order.business_name}
 Teléfono: ${order.phone}
 Email: ${order.email}
 

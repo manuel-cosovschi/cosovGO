@@ -11,8 +11,7 @@ export const orderItemSchema = z.object({
 );
 
 export const orderSchema = z.object({
-  business_name: z.string().min(1, 'El nombre del local/marca es obligatorio'),
-  contact_name: z.string().min(1, 'El nombre de contacto es obligatorio'),
+  name: z.string().min(1, 'El nombre es obligatorio'),
   phone: z.string().min(6, 'El teléfono es obligatorio'),
   email: z.string().email('Email inválido'),
   delivery_method: z.enum(['pickup', 'delivery'], {
@@ -21,7 +20,6 @@ export const orderSchema = z.object({
   address: z.string().optional(),
   city: z.string().optional(),
   delivery_date: z.string().min(1, 'La fecha de entrega es obligatoria'),
-  time_slot: z.string().optional(),
   observations: z.string().optional(),
   requires_invoice: z.boolean().optional(),
   invoice_data: z.record(z.unknown()).optional(),

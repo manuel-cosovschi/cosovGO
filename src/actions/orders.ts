@@ -1,7 +1,6 @@
 'use server';
 
 import { createServerClient } from '@/lib/supabase/server';
-import { validateDeliveryDate } from '@/lib/advance-time';
 import { orderSchema } from '@/lib/validations/order';
 import { sendOrderConfirmation, sendNewOrderNotification, sendOrderStatusUpdate } from '@/lib/emails';
 import { revalidatePath } from 'next/cache';
@@ -21,29 +20,19 @@ export async function createOrder(input: CreateOrderInput): Promise<{
 
   const supabase = await createServerClient();
 
-  // Get global min advance hours
-  const { data: setting } = await supabase
-    .from('settings')
-    .select('value')
-    .eq('key', 'min_advance_hours')
-    .single();
-  const globalMinHours = setting ? Number(setting.value) : 48;
-
-  // Get product advance hours
+  // Get product / package data for price snapshot
   const productIds = data.items.filter((i) => i.product_id).map((i) => i.product_id!);
   const packageIds = data.items.filter((i) => i.package_id).map((i) => i.package_id!);
 
-  let advanceHours: (number | null)[] = [];
-  let productsData: { id: string; name: string; price: number; min_advance_hours: number | null }[] = [];
+  let productsData: { id: string; name: string; price: number }[] = [];
   let packagesData: { id: string; name: string; price: number }[] = [];
 
   if (productIds.length > 0) {
     const { data: products } = await supabase
       .from('products')
-      .select('id, name, price, min_advance_hours')
+      .select('id, name, price')
       .in('id', productIds);
     productsData = products || [];
-    advanceHours = productsData.map((p) => p.min_advance_hours);
   }
 
   if (packageIds.length > 0) {
@@ -52,17 +41,6 @@ export async function createOrder(input: CreateOrderInput): Promise<{
       .select('id, name, price')
       .in('id', packageIds);
     packagesData = packages || [];
-  }
-
-  // Validate delivery date (CRITICAL RULE)
-  const validation = validateDeliveryDate(
-    new Date(data.delivery_date + 'T00:00:00'),
-    globalMinHours,
-    advanceHours
-  );
-
-  if (!validation.valid) {
-    return { success: false, error: validation.message };
   }
 
   // Validate delivery address
@@ -98,15 +76,15 @@ export async function createOrder(input: CreateOrderInput): Promise<{
     .from('orders')
     .insert({
       status: 'received',
-      business_name: data.business_name,
-      contact_name: data.contact_name,
+      business_name: data.name,
+      contact_name: data.name,
       phone: data.phone,
       email: data.email,
       delivery_method: data.delivery_method,
       address: data.address || null,
       city: data.city || null,
       delivery_date: data.delivery_date,
-      time_slot: data.time_slot || null,
+      time_slot: null,
       observations: data.observations || null,
       requires_invoice: data.requires_invoice || false,
       invoice_data: data.invoice_data || null,

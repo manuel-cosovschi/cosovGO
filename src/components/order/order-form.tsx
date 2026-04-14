@@ -11,22 +11,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCart } from '@/components/cart/cart-provider';
 import { orderSchema, type OrderFormValues } from '@/lib/validations/order';
-import { getMinDeliveryDate } from '@/lib/advance-time';
-import { DEFAULT_MIN_ADVANCE_HOURS, TIME_SLOTS } from '@/lib/constants';
 import { createOrder } from '@/actions/orders';
-import { format, isBefore, startOfDay } from 'date-fns';
-import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
 export function OrderForm() {
   const router = useRouter();
-  const { items, subtotal, maxAdvanceHours, clearCart } = useCart();
+  const { items, subtotal, clearCart } = useCart();
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const itemAdvanceHours = items.map((i) => i.min_advance_hours);
-  const minDate = getMinDeliveryDate(DEFAULT_MIN_ADVANCE_HOURS, itemAdvanceHours);
-  const minDateStr = format(minDate, 'yyyy-MM-dd');
 
   const {
     register,
@@ -81,19 +73,6 @@ export function OrderForm() {
     }
   };
 
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = new Date(e.target.value + 'T00:00:00');
-    if (isBefore(selected, startOfDay(minDate))) {
-      const hours = maxAdvanceHours || DEFAULT_MIN_ADVANCE_HOURS;
-      toast.error(
-        `Para garantizar disponibilidad y correcta organización de producción, los pedidos deben realizarse con un mínimo de ${hours} horas de anticipación.`
-      );
-      e.target.value = '';
-      return;
-    }
-    setValue('delivery_date', e.target.value);
-  };
-
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
       {/* Datos del cliente */}
@@ -103,27 +82,28 @@ export function OrderForm() {
         </h3>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="business_name">Local / Marca / Cliente *</Label>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="name">Nombre *</Label>
             <Input
-              id="business_name"
-              placeholder="Nombre del local o marca"
-              {...register('business_name')}
+              id="name"
+              placeholder="Tu nombre"
+              {...register('name')}
             />
-            {errors.business_name && (
-              <p className="text-sm text-red-600">{errors.business_name.message}</p>
+            {errors.name && (
+              <p className="text-sm text-red-600">{errors.name.message}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="contact_name">Nombre de contacto *</Label>
+            <Label htmlFor="email">Email *</Label>
             <Input
-              id="contact_name"
-              placeholder="Tu nombre"
-              {...register('contact_name')}
+              id="email"
+              type="email"
+              placeholder="tuemail@ejemplo.com"
+              {...register('email')}
             />
-            {errors.contact_name && (
-              <p className="text-sm text-red-600">{errors.contact_name.message}</p>
+            {errors.email && (
+              <p className="text-sm text-red-600">{errors.email.message}</p>
             )}
           </div>
 
@@ -137,19 +117,6 @@ export function OrderForm() {
             />
             {errors.phone && (
               <p className="text-sm text-red-600">{errors.phone.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="email">Email *</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="contacto@tucafe.com"
-              {...register('email')}
-            />
-            {errors.email && (
-              <p className="text-sm text-red-600">{errors.email.message}</p>
             )}
           </div>
         </div>
@@ -183,16 +150,11 @@ export function OrderForm() {
             <Input
               id="delivery_date"
               type="date"
-              min={minDateStr}
               {...register('delivery_date')}
-              onChange={handleDateChange}
             />
             {errors.delivery_date && (
               <p className="text-sm text-red-600">{errors.delivery_date.message}</p>
             )}
-            <p className="text-xs text-stone-400">
-              Mínimo {maxAdvanceHours || DEFAULT_MIN_ADVANCE_HOURS}h de anticipación
-            </p>
           </div>
 
           {deliveryMethod === 'delivery' && (
@@ -219,22 +181,6 @@ export function OrderForm() {
               </div>
             </>
           )}
-
-          <div className="space-y-2">
-            <Label>Franja horaria (opcional)</Label>
-            <Select onValueChange={(v) => setValue('time_slot', v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sin preferencia" />
-              </SelectTrigger>
-              <SelectContent>
-                {TIME_SLOTS.map((slot) => (
-                  <SelectItem key={slot} value={slot}>
-                    {slot}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
         </div>
       </div>
 
@@ -277,14 +223,6 @@ export function OrderForm() {
               minimumFractionDigits: 0,
             }).format(subtotal)}
           </span>
-        </div>
-
-        <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 mb-6">
-          <p className="text-sm text-amber-800">
-            Los pedidos deben realizarse con un mínimo de{' '}
-            <strong>{maxAdvanceHours || DEFAULT_MIN_ADVANCE_HOURS} horas</strong> de
-            anticipación para garantizar disponibilidad y calidad.
-          </p>
         </div>
 
         <Button

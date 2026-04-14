@@ -100,8 +100,7 @@ export default function PedidosPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-stone-900">{order.business_name}</p>
-                      <p className="text-xs text-stone-500">{order.contact_name}</p>
+                      <p className="font-medium text-stone-900">{order.contact_name || order.business_name}</p>
                     </td>
                     <td className="px-4 py-3 text-stone-600">{formatDate(order.delivery_date)}</td>
                     <td className="px-4 py-3 font-medium text-stone-900">{formatPrice(order.subtotal)}</td>

@@ -58,12 +58,8 @@ export default async function OrderDetailPage({ params }: Props) {
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-stone-500">Local / Marca</span>
-              <span className="font-medium">{order.business_name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-stone-500">Contacto</span>
-              <span className="font-medium">{order.contact_name}</span>
+              <span className="text-stone-500">Nombre</span>
+              <span className="font-medium">{order.contact_name || order.business_name}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-stone-500">Teléfono</span>

@@ -100,10 +100,10 @@ export default async function AdminDashboardPage() {
               >
                 <div>
                   <p className="font-medium text-stone-900">
-                    #{order.order_number} — {order.business_name}
+                    #{order.order_number} — {order.contact_name || order.business_name}
                   </p>
                   <p className="text-sm text-stone-500">
-                    {order.contact_name} · {formatDate(order.delivery_date)}
+                    {formatDate(order.delivery_date)}
                   </p>
                 </div>
                 <OrderStatusBadge status={order.status as OrderStatus} />

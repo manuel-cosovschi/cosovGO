@@ -174,15 +174,13 @@ export interface OrderDetail extends Order {
 // === Inputs ===
 
 export interface CreateOrderInput {
-  business_name: string;
-  contact_name: string;
+  name: string;
   phone: string;
   email: string;
   delivery_method: DeliveryMethod;
   address?: string;
   city?: string;
   delivery_date: string;
-  time_slot?: string;
   observations?: string;
   requires_invoice?: boolean;
   invoice_data?: Record<string, unknown>;
