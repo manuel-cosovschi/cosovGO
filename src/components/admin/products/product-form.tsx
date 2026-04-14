@@ -42,6 +42,7 @@ export function ProductForm({ product, categories }: ProductFormProps) {
           long_description: product.long_description || '',
           ingredients: product.ingredients || '',
           price: product.price,
+          cost_override: product.cost_override,
           image_url: product.image_url,
           sale_unit: product.sale_unit,
           min_quantity: product.min_quantity,
@@ -108,7 +109,7 @@ export function ProductForm({ product, categories }: ProductFormProps) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="price">Precio *</Label>
+          <Label htmlFor="price">Precio de venta *</Label>
           <Input
             id="price"
             type="number"
@@ -116,6 +117,23 @@ export function ProductForm({ product, categories }: ProductFormProps) {
             {...register('price', { valueAsNumber: true })}
           />
           {errors.price && <p className="text-sm text-red-600">{errors.price.message}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="cost_override">Costo unitario</Label>
+          <Input
+            id="cost_override"
+            type="number"
+            step="0.01"
+            placeholder="Ej: 800"
+            {...register('cost_override', { valueAsNumber: true })}
+          />
+          <p className="text-xs text-stone-400">
+            Cuánto te cuesta producir 1 unidad. Se usa para calcular margen.
+          </p>
+          {errors.cost_override && (
+            <p className="text-sm text-red-600">{errors.cost_override.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">

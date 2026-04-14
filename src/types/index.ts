@@ -84,6 +84,7 @@ export interface Product {
   long_description: string | null;
   ingredients: string | null;
   price: number;
+  cost_override: number | null;
   image_url: string | null;
   gallery_urls: string[];
   is_active: boolean;
