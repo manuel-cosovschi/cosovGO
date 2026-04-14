@@ -1,14 +1,56 @@
-import { Resend } from 'resend';
 import type { Order, OrderItem, OrderStatus } from '@/types';
 import { ORDER_STATUS_LABELS } from '@/types';
 import { formatPrice, formatDate } from './utils';
 
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-// `onboarding@resend.dev` es el remitente compartido de Resend: funciona
-// sin verificar dominio. Para usar un remitente propio (ej: pedidos@cosov.com.ar)
-// hay que verificar el dominio en Resend y override-ear con la env var FROM_EMAIL.
-const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+// === Brevo (ex Sendinblue) ===
+// Free tier: 300 mails/día. Usa "single-sender verification" (no requiere DNS
+// ni dominio propio): Valen confirma un email suyo con un link, y podemos
+// mandar desde ese remitente a CUALQUIER destinatario — esto desbloquea
+// mandar confirmaciones a clientes externos.
+//
+// Env vars esperadas en Vercel:
+//   BREVO_API_KEY   — la key generada en https://app.brevo.com/settings/keys/api
+//   FROM_EMAIL      — email verificado como single-sender (ej: valencosovschi@hotmail.com)
+//   FROM_NAME       — opcional, nombre que ven los clientes (default: "COSOV.")
+//   ADMIN_EMAIL     — a dónde llegan los avisos a Valen
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const FROM_EMAIL = process.env.FROM_EMAIL || '';
+const FROM_NAME = process.env.FROM_NAME || 'COSOV.';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'valencosovschi@hotmail.com';
+
+async function sendBrevo(params: {
+  to: string;
+  subject: string;
+  text: string;
+  senderName?: string;
+}) {
+  if (!BREVO_API_KEY || !FROM_EMAIL) {
+    console.warn(
+      '[email] Brevo no configurado (falta BREVO_API_KEY o FROM_EMAIL). Envío salteado.'
+    );
+    return;
+  }
+
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': BREVO_API_KEY,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: params.senderName || FROM_NAME, email: FROM_EMAIL },
+      to: [{ email: params.to }],
+      subject: params.subject,
+      textContent: params.text,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '<no body>');
+    throw new Error(`Brevo ${res.status}: ${body}`);
+  }
+}
 
 export async function sendOrderConfirmation(
   toEmail: string,
@@ -19,9 +61,7 @@ export async function sendOrderConfirmation(
     .map((i) => `• ${i.item_name} x${i.quantity} — ${formatPrice(i.subtotal)}`)
     .join('\n');
 
-  if (!resend) return;
-  await resend.emails.send({
-    from: `COSOV. Pedidos <${FROM_EMAIL}>`,
+  await sendBrevo({
     to: toEmail,
     subject: `Pedido #${order.order_number} recibido — COSOV.`,
     text: `¡Hola ${order.contact_name}!
@@ -63,12 +103,8 @@ export async function sendNewOrderNotification(
 Margen estimado: ${formatPrice(margin)}${someMissingCost ? '\n(falta cargar costo de producción de algunos productos)' : ''}`
     : '';
 
-  if (!resend) {
-    console.warn('[email] RESEND_API_KEY no configurada — admin notif salteada');
-    return;
-  }
-  await resend.emails.send({
-    from: `COSOV. Sistema <${FROM_EMAIL}>`,
+  await sendBrevo({
+    senderName: 'COSOV. Sistema',
     to: ADMIN_EMAIL,
     subject: `Nuevo pedido #${order.order_number} — ${order.contact_name || order.business_name}`,
     text: `Nuevo pedido recibido:
@@ -144,9 +180,7 @@ export async function sendOrderStatusUpdate(
     intro: `Tu pedido #${data.orderNumber} cambió de estado a: ${statusLabel}`,
   };
 
-  if (!resend) return;
-  await resend.emails.send({
-    from: `COSOV. Pedidos <${FROM_EMAIL}>`,
+  await sendBrevo({
     to: toEmail,
     subject: tpl.subject,
     text: `¡Hola ${data.contactName}!
