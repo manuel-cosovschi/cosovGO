@@ -38,9 +38,9 @@
 NEXT_PUBLIC_SUPABASE_URL = (tu Project URL)
 NEXT_PUBLIC_SUPABASE_ANON_KEY = (tu anon key)
 SUPABASE_SERVICE_ROLE_KEY = (tu service_role key)
-RESEND_API_KEY = re_dummy_key_for_now
-FROM_EMAIL = pedidos@cosov.com.ar
-ADMIN_EMAIL = valentina@cosov.com.ar
+RESEND_API_KEY = (tu API key real de Resend, ej: re_xxx)
+FROM_EMAIL = onboarding@resend.dev
+ADMIN_EMAIL = valencosovschi@hotmail.com
 ```
 
 5. Click "Deploy"
@@ -73,16 +73,31 @@ ADMIN_EMAIL = valentina@cosov.com.ar
 
 ---
 
-## Emails (opcional, para después)
+## Emails
 
-Para que los emails funcionen:
-1. Crear cuenta en https://resend.com
-2. Verificar dominio
-3. Obtener API key
-4. Reemplazar `RESEND_API_KEY` en Vercel con la key real
-5. Re-deploy
+El admin (Valen) recibe una notificación en `valencosovschi@hotmail.com`
+cada vez que entra un pedido nuevo, con todos los datos del pedido +
+costo de producción y margen estimado.
 
-Sin esto la app funciona igual, solo no envía emails.
+**Setup mínimo para que ya funcione**:
+1. Crear cuenta en https://resend.com con `valencosovschi@hotmail.com`.
+2. Generar una API key en `Settings > API Keys`.
+3. En Vercel `Settings > Environment Variables` setear:
+   - `RESEND_API_KEY` = la key real (`re_xxx`).
+   - `FROM_EMAIL` = `onboarding@resend.dev` (sender compartido,
+     no requiere verificar dominio).
+   - `ADMIN_EMAIL` = `valencosovschi@hotmail.com`.
+4. Re-deploy.
+
+**Limitación con `onboarding@resend.dev`**: Resend solo permite enviar
+mails a la dirección registrada en la cuenta (en este caso, el hotmail
+de Valen). El admin notif a Valen llega sin problema, pero las
+confirmaciones a clientes externos no van a salir hasta que se verifique
+un dominio propio en Resend (`pedidos@cosov.com.ar` o el que sea) y se
+cambie `FROM_EMAIL` por ese remitente.
+
+Si algún envío falla, queda logueado en Vercel con el prefijo
+`[email]` para debug.
 
 ## Dominio personalizado (opcional)
 

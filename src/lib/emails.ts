@@ -4,8 +4,11 @@ import { ORDER_STATUS_LABELS } from '@/types';
 import { formatPrice, formatDate } from './utils';
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-const FROM_EMAIL = process.env.FROM_EMAIL || 'pedidos@cosov.com.ar';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'valencosovschi@Hotmail.com';
+// `onboarding@resend.dev` es el remitente compartido de Resend: funciona
+// sin verificar dominio. Para usar un remitente propio (ej: pedidos@cosov.com.ar)
+// hay que verificar el dominio en Resend y override-ear con la env var FROM_EMAIL.
+const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'valencosovschi@hotmail.com';
 
 export async function sendOrderConfirmation(
   toEmail: string,
@@ -43,10 +46,27 @@ export async function sendNewOrderNotification(
   items: OrderItem[]
 ) {
   const itemsList = items
-    .map((i) => `• ${i.item_name} x${i.quantity}`)
+    .map((i) => {
+      const cost = i.cost_subtotal != null
+        ? ` · Costo ${formatPrice(i.cost_subtotal)}`
+        : '';
+      return `• ${i.item_name} x${i.quantity} — Precio ${formatPrice(i.subtotal)}${cost}`;
+    })
     .join('\n');
 
-  if (!resend) return;
+  const productionCost = order.production_cost ?? 0;
+  const margin = order.subtotal - productionCost;
+  const someMissingCost = items.some((i) => i.cost_subtotal == null || i.cost_subtotal === 0);
+
+  const costSummary = order.production_cost != null
+    ? `Costo de producción: ${formatPrice(productionCost)}
+Margen estimado: ${formatPrice(margin)}${someMissingCost ? '\n(falta cargar costo de producción de algunos productos)' : ''}`
+    : '';
+
+  if (!resend) {
+    console.warn('[email] RESEND_API_KEY no configurada — admin notif salteada');
+    return;
+  }
   await resend.emails.send({
     from: `COSOV. Sistema <${FROM_EMAIL}>`,
     to: ADMIN_EMAIL,
@@ -64,7 +84,8 @@ ${order.address ? `Dirección: ${order.address}, ${order.city}` : ''}
 Productos:
 ${itemsList}
 
-Total: ${formatPrice(order.subtotal)}
+Total facturado: ${formatPrice(order.subtotal)}
+${costSummary}
 
 ${order.observations ? `Observaciones: ${order.observations}` : ''}
 

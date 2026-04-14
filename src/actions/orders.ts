@@ -3,6 +3,7 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { orderSchema } from '@/lib/validations/order';
 import { sendOrderConfirmation, sendNewOrderNotification, sendOrderStatusUpdate } from '@/lib/emails';
+import { getProductUnitCosts, getPackageUnitCosts } from '@/lib/production-cost';
 import { revalidatePath } from 'next/cache';
 import type { CreateOrderInput, Order, OrderDetail, OrderFilters, OrderStatus, OrderItem } from '@/types';
 import { VALID_TRANSITIONS, ORDER_STATUS_LABELS } from '@/types';
@@ -53,11 +54,21 @@ export async function createOrder(input: CreateOrderInput): Promise<{
   productsData.forEach((p) => priceMap.set(p.id, { name: p.name, price: p.price }));
   packagesData.forEach((p) => priceMap.set(p.id, { name: p.name, price: p.price }));
 
-  // Build order items with price snapshot
+  // Production cost map (per product/package)
+  const [productCosts, packageCosts] = await Promise.all([
+    getProductUnitCosts(productIds),
+    getPackageUnitCosts(packageIds),
+  ]);
+
+  // Build order items with price + cost snapshot
   const orderItems = data.items.map((item) => {
     const key = item.product_id || item.package_id!;
     const info = priceMap.get(key);
     if (!info) throw new Error(`Producto no encontrado: ${key}`);
+    const unitCost = item.product_id
+      ? productCosts.get(item.product_id) ?? 0
+      : packageCosts.get(item.package_id!) ?? 0;
+    const costSubtotal = Math.round(unitCost * item.quantity * 100) / 100;
     return {
       product_id: item.product_id || null,
       package_id: item.package_id || null,
@@ -65,11 +76,17 @@ export async function createOrder(input: CreateOrderInput): Promise<{
       unit_price: info.price,
       quantity: item.quantity,
       subtotal: info.price * item.quantity,
+      unit_cost: unitCost > 0 ? Math.round(unitCost * 100) / 100 : null,
+      cost_subtotal: costSubtotal > 0 ? costSubtotal : null,
       notes: item.notes || null,
     };
   });
 
   const subtotal = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
+  const productionCostTotal = orderItems.reduce(
+    (sum, i) => sum + (i.cost_subtotal ?? 0),
+    0
+  );
 
   // Insert order
   const { data: order, error: orderError } = await supabase
@@ -89,6 +106,7 @@ export async function createOrder(input: CreateOrderInput): Promise<{
       requires_invoice: data.requires_invoice || false,
       invoice_data: data.invoice_data || null,
       subtotal,
+      production_cost: productionCostTotal > 0 ? productionCostTotal : null,
     })
     .select()
     .single();
@@ -110,11 +128,13 @@ export async function createOrder(input: CreateOrderInput): Promise<{
     notes: 'Pedido creado',
   });
 
-  // Send emails (non-blocking)
-  Promise.all([
-    sendOrderConfirmation(data.email, order as Order, orderItems as OrderItem[]),
-    sendNewOrderNotification(order as Order, orderItems as OrderItem[]),
-  ]).catch(console.error);
+  // Send emails (non-blocking) — separate catches to debug each side independently.
+  sendOrderConfirmation(data.email, order as Order, orderItems as OrderItem[]).catch(
+    (err) => console.error('[email] confirmación al cliente falló:', err)
+  );
+  sendNewOrderNotification(order as Order, orderItems as OrderItem[]).catch(
+    (err) => console.error('[email] notif admin (Valen) falló:', err)
+  );
 
   revalidatePath('/admin/pedidos');
   revalidatePath('/admin');

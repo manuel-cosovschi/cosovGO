@@ -139,6 +139,7 @@ export interface Order {
   requires_invoice: boolean;
   invoice_data: Record<string, unknown> | null;
   subtotal: number;
+  production_cost: number | null;
   admin_notes: string | null;
   created_at: string;
   updated_at: string;
@@ -153,6 +154,8 @@ export interface OrderItem {
   unit_price: number;
   quantity: number;
   subtotal: number;
+  unit_cost: number | null;
+  cost_subtotal: number | null;
   notes: string | null;
 }
 

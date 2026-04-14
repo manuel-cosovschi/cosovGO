@@ -130,14 +130,43 @@ export default async function OrderDetailPage({ params }: Props) {
                   <p className="text-sm text-stone-500">
                     {formatPrice(item.unit_price)} x {item.quantity}
                   </p>
+                  {item.cost_subtotal != null && (
+                    <p className="text-xs text-stone-400">
+                      Costo de producción: {formatPrice(item.cost_subtotal)}
+                    </p>
+                  )}
                 </div>
                 <p className="font-medium text-stone-900">{formatPrice(item.subtotal)}</p>
               </div>
             ))}
           </div>
-          <div className="mt-4 flex items-center justify-between border-t border-stone-200 pt-4">
-            <span className="text-lg font-semibold">Total</span>
-            <span className="text-lg font-bold">{formatPrice(order.subtotal)}</span>
+          <div className="mt-4 space-y-2 border-t border-stone-200 pt-4">
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-semibold">Total facturado</span>
+              <span className="text-lg font-bold">{formatPrice(order.subtotal)}</span>
+            </div>
+            {order.production_cost != null && (
+              <>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-stone-600">Costo de producción</span>
+                  <span className="font-medium text-stone-700">
+                    {formatPrice(order.production_cost)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-stone-600">Margen estimado</span>
+                  <span
+                    className={`font-semibold ${
+                      order.subtotal - order.production_cost > 0
+                        ? 'text-emerald-700'
+                        : 'text-red-600'
+                    }`}
+                  >
+                    {formatPrice(order.subtotal - order.production_cost)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
