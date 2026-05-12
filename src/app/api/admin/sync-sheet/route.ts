@@ -68,11 +68,10 @@ export async function POST(req: Request) {
 
   const supabase = createAdminClient();
 
-  // 1. Traer todos los pedidos no cancelados/rechazados, con sus items
+  // 1. Traer TODOS los pedidos (incluso cancelados/rechazados) para diagnóstico
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select('id, order_number, contact_name, delivery_date, status, created_at, order_items(item_name, quantity, unit_price, subtotal)')
-    .not('status', 'in', '(cancelled,rejected)')
     .order('order_number', { ascending: true });
 
   if (ordersErr || !orders) {
@@ -96,20 +95,33 @@ export async function POST(req: Request) {
     }
   }
 
-  // 3. Detectar pedidos faltantes (alguno de sus items no está en el sheet)
-  type OrderRow = { id: string; order_number: number; contact_name: string; delivery_date: string; order_items: Array<{ item_name: string; quantity: number; unit_price: number; subtotal: number }> };
+  // 3. Diagnóstico: clasificar cada pedido
+  type OrderRow = { id: string; order_number: number; contact_name: string; delivery_date: string; status: string; created_at: string; order_items: Array<{ item_name: string; quantity: number; unit_price: number; subtotal: number }> };
+  const diagnostic: Array<{ order_number: number; client: string; date: string; status: string; items: number; in_sheet: boolean; created_at: string }> = [];
   const missing: OrderRow[] = [];
+
   for (const order of orders as OrderRow[]) {
     const items = order.order_items || [];
-    if (items.length === 0) continue;
     const date = formatDate(order.delivery_date);
     const client = normalizeName(order.contact_name);
-    // Si alguno de los items no está → el pedido falta
-    const someMissing = items.some(it => {
+    const inSheet = items.length > 0 && items.every(it => {
       const key = `${date}|${client}|${normalizeName(it.item_name)}|${it.quantity}`;
-      return !existingKeys.has(key);
+      return existingKeys.has(key);
     });
-    if (someMissing) missing.push(order);
+
+    diagnostic.push({
+      order_number: order.order_number,
+      client: order.contact_name,
+      date: order.delivery_date,
+      status: order.status,
+      items: items.length,
+      in_sheet: inSheet,
+      created_at: order.created_at,
+    });
+
+    if (!inSheet && items.length > 0 && order.status !== 'cancelled' && order.status !== 'rejected') {
+      missing.push(order);
+    }
   }
 
   // 4. Insertar los faltantes (uno por uno, antes del RESUMEN)
@@ -160,6 +172,7 @@ export async function POST(req: Request) {
   return NextResponse.json({
     total_orders: orders.length,
     missing_count: missing.length,
+    diagnostic,
     results,
   });
 }
