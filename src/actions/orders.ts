@@ -129,16 +129,17 @@ export async function createOrder(input: CreateOrderInput): Promise<{
     notes: 'Pedido creado',
   });
 
-  // Send emails (non-blocking) — separate catches to debug each side independently.
-  sendOrderConfirmation(data.email, order as Order, orderItems as OrderItem[]).catch(
-    (err) => console.error('[email] confirmación al cliente falló:', err)
-  );
-  sendNewOrderNotification(order as Order, orderItems as OrderItem[]).catch(
-    (err) => console.error('[email] notif admin (Valen) falló:', err)
-  );
-  appendOrderToSheets(order as Order, orderItems as OrderItem[]).catch(
-    (err) => console.error('[sheets] append falló:', err)
-  );
+  // Send emails + sync sheet — esperamos todos en paralelo. En serverless (Vercel)
+  // las promesas fire-and-forget pueden morir cuando la función termina, así que
+  // usamos allSettled para que todo se complete sin bloquear si uno falla.
+  const [emailCustomer, emailAdmin, sheet] = await Promise.allSettled([
+    sendOrderConfirmation(data.email, order as Order, orderItems as OrderItem[]),
+    sendNewOrderNotification(order as Order, orderItems as OrderItem[]),
+    appendOrderToSheets(order as Order, orderItems as OrderItem[]),
+  ]);
+  if (emailCustomer.status === 'rejected') console.error('[email] confirmación al cliente falló:', emailCustomer.reason);
+  if (emailAdmin.status === 'rejected') console.error('[email] notif admin (Valen) falló:', emailAdmin.reason);
+  if (sheet.status === 'rejected') console.error('[sheets] append falló:', sheet.reason);
 
   revalidatePath('/admin/pedidos');
   revalidatePath('/admin');
