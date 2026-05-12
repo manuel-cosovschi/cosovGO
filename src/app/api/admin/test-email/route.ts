@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
 
 // Temporary diagnostic endpoint — remove after debugging email issues.
-// Protected by SYNC_SECRET env var (same token used for the sheet sync endpoint).
+// GET  → returns env var status (masked, no secrets exposed) + Brevo account info
+// GET ?send=1 → also sends a test email to ADMIN_EMAIL
 export async function GET(req: Request) {
-  const secret = process.env.SYNC_SECRET;
-  const auth = req.headers.get('authorization');
-  if (!secret || auth !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const { searchParams } = new URL(req.url);
+  const shouldSend = searchParams.get('send') === '1';
 
   const apiKey = process.env.BREVO_API_KEY;
   const fromEmail = process.env.FROM_EMAIL;
@@ -25,7 +23,12 @@ export async function GET(req: Request) {
     FROM_EMAIL: fromEmail ?? '(no seteada)',
     FROM_NAME: fromName,
     ADMIN_EMAIL: adminEmail ?? '(no seteada — usa default hotmail)',
+    vars_ok: !!(apiKey && fromEmail),
   };
+
+  if (!shouldSend) {
+    return NextResponse.json({ env });
+  }
 
   if (!apiKey || !fromEmail) {
     return NextResponse.json({ env, error: 'Env vars faltantes — Brevo no puede enviar.' });
@@ -47,7 +50,8 @@ export async function GET(req: Request) {
         subject: 'COSOV. — test de diagnóstico de email',
         textContent:
           'Este mail fue enviado desde el endpoint de diagnóstico de COSOV. ' +
-          'Si lo recibís, la integración con Brevo funciona. Revisá también la carpeta de spam.',
+          'Si lo recibís, la integración con Brevo funciona correctamente. ' +
+          'Revisá también la carpeta de spam.',
       }),
     });
 
