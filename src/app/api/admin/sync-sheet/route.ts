@@ -174,9 +174,8 @@ export async function POST(req: Request) {
   return NextResponse.json({
     total_orders: orders.length,
     missing_count: missing.length,
-    sheet_rows_sample: sheetRows.slice(0, 5),
     existing_keys_count: existingKeys.size,
-    existing_keys_sample: Array.from(existingKeys).slice(0, 5),
+    existing_keys_all: Array.from(existingKeys),
     diagnostic,
     results,
   });
