@@ -104,10 +104,9 @@ export async function POST(req: Request) {
     const items = order.order_items || [];
     const date = formatDate(order.delivery_date);
     const client = normalizeName(order.contact_name);
-    const inSheet = items.length > 0 && items.every(it => {
-      const key = `${date}|${client}|${normalizeName(it.item_name)}|${it.quantity}`;
-      return existingKeys.has(key);
-    });
+    const itemKeys = items.map(it => `${date}|${client}|${normalizeName(it.item_name)}|${it.quantity}`);
+    const itemsInSheet = itemKeys.map(k => existingKeys.has(k));
+    const inSheet = items.length > 0 && itemsInSheet.every(Boolean);
 
     diagnostic.push({
       order_number: order.order_number,
@@ -117,7 +116,10 @@ export async function POST(req: Request) {
       items: items.length,
       in_sheet: inSheet,
       created_at: order.created_at,
-    });
+      // debug
+      item_keys: itemKeys,
+      items_in_sheet: itemsInSheet,
+    } as never);
 
     if (!inSheet && items.length > 0 && order.status !== 'cancelled' && order.status !== 'rejected') {
       missing.push(order);
@@ -172,6 +174,9 @@ export async function POST(req: Request) {
   return NextResponse.json({
     total_orders: orders.length,
     missing_count: missing.length,
+    sheet_rows_sample: sheetRows.slice(0, 5),
+    existing_keys_count: existingKeys.size,
+    existing_keys_sample: Array.from(existingKeys).slice(0, 5),
     diagnostic,
     results,
   });
