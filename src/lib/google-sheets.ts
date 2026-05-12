@@ -2,7 +2,7 @@ import { google } from 'googleapis';
 import type { Order, OrderItem } from '@/types';
 
 const SPREADSHEET_ID = '179ujBmHmdEGZZPxcduu5gqrdSNe_JfOZxE92Xm8u4aQ';
-const SHEET_NAME = 'pedidos del mes';
+const SHEET_NAME = 'Pedidos del Mes';
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
