@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { diagnoseEmail } from '@/actions/email-diagnostics';
+import { diagnoseSheets } from '@/actions/sheets-diagnostics';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,11 +10,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
 
 type DiagnoseResult = Awaited<ReturnType<typeof diagnoseEmail>>;
+type SheetsResult = Awaited<ReturnType<typeof diagnoseSheets>>;
 
 export default function DebugEmailPage() {
   const [to, setTo] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<DiagnoseResult | null>(null);
+  const [sheetsLoading, setSheetsLoading] = useState(false);
+  const [sheetsResult, setSheetsResult] = useState<SheetsResult | null>(null);
 
   const run = async () => {
     setLoading(true);
@@ -22,6 +26,16 @@ export default function DebugEmailPage() {
       setResult(r);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runSheets = async () => {
+    setSheetsLoading(true);
+    try {
+      const r = await diagnoseSheets();
+      setSheetsResult(r);
+    } finally {
+      setSheetsLoading(false);
     }
   };
 
@@ -63,7 +77,7 @@ export default function DebugEmailPage() {
       {result && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Resultado</CardTitle>
+            <CardTitle className="text-base">Resultado email</CardTitle>
           </CardHeader>
           <CardContent>
             <pre className="overflow-auto rounded bg-stone-100 p-4 text-xs leading-relaxed text-stone-800">
@@ -85,6 +99,36 @@ export default function DebugEmailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Diagnóstico de Google Sheets</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-stone-500">
+            Verifica credenciales, acceso al spreadsheet y si el tab del mes actual existe.
+          </p>
+          <Button onClick={runSheets} disabled={sheetsLoading} variant="outline">
+            {sheetsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Verificar Google Sheets
+          </Button>
+          {sheetsResult && (
+            <div className="space-y-2">
+              {'mensaje' in sheetsResult && sheetsResult.mensaje && (
+                <p className={`text-sm font-medium ${sheetsResult.tabExiste ? 'text-emerald-700' : 'text-red-700'}`}>
+                  {sheetsResult.mensaje}
+                </p>
+              )}
+              {'error' in sheetsResult && sheetsResult.error && (
+                <p className="text-sm font-medium text-red-700">❌ {String(sheetsResult.error)}</p>
+              )}
+              <pre className="overflow-auto rounded bg-stone-100 p-4 text-xs leading-relaxed text-stone-800">
+                {JSON.stringify(sheetsResult, null, 2)}
+              </pre>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
