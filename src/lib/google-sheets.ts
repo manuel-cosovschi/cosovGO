@@ -2,7 +2,20 @@ import { google } from 'googleapis';
 import type { Order, OrderItem } from '@/types';
 
 const SPREADSHEET_ID = '179ujBmHmdEGZZPxcduu5gqrdSNe_JfOZxE92Xm8u4aQ';
-const SHEET_NAME = 'Pedidos del Mes';
+
+const MESES_ES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+
+function getSheetName(dateStr: string | null | undefined): string {
+  if (!dateStr) {
+    const now = new Date();
+    return `Pedidos del Mes-${MESES_ES[now.getMonth()]}`;
+  }
+  const monthIndex = parseInt(dateStr.split('-')[1], 10) - 1;
+  return `Pedidos del Mes-${MESES_ES[monthIndex]}`;
+}
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
@@ -31,6 +44,7 @@ export async function appendOrderToSheets(order: Order, orderItems: OrderItem[])
   const sheets = google.sheets({ version: 'v4', auth });
 
   const deliveryDate = formatDate(order.delivery_date);
+  const sheetName = getSheetName(order.delivery_date);
 
   // Una fila por item del pedido
   const rows = orderItems.map((item) => [
@@ -45,7 +59,7 @@ export async function appendOrderToSheets(order: Order, orderItems: OrderItem[])
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A:G`,
+    range: `${sheetName}!A:G`,
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values: rows },
