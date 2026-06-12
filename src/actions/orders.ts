@@ -3,6 +3,7 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { orderSchema } from '@/lib/validations/order';
 import { sendOrderConfirmation, sendNewOrderNotification, sendOrderStatusUpdate } from '@/lib/emails';
+import { appendOrderToSheets } from '@/lib/google-sheets';
 import { getProductUnitCosts, getPackageUnitCosts } from '@/lib/production-cost';
 import { revalidatePath } from 'next/cache';
 import type { CreateOrderInput, Order, OrderDetail, OrderFilters, OrderStatus, OrderItem } from '@/types';
@@ -134,6 +135,9 @@ export async function createOrder(input: CreateOrderInput): Promise<{
   );
   sendNewOrderNotification(order as Order, orderItems as OrderItem[]).catch(
     (err) => console.error('[email] notif admin (Valen) falló:', err)
+  );
+  appendOrderToSheets(order as Order, orderItems as OrderItem[]).catch(
+    (err) => console.error('[sheets] append falló:', err)
   );
 
   revalidatePath('/admin/pedidos');

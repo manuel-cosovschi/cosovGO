@@ -38,8 +38,9 @@
 NEXT_PUBLIC_SUPABASE_URL = (tu Project URL)
 NEXT_PUBLIC_SUPABASE_ANON_KEY = (tu anon key)
 SUPABASE_SERVICE_ROLE_KEY = (tu service_role key)
-RESEND_API_KEY = (tu API key real de Resend, ej: re_xxx)
-FROM_EMAIL = onboarding@resend.dev
+BREVO_API_KEY = (tu API key de Brevo, ej: xkeysib-xxx)
+FROM_EMAIL = valencosovschi@hotmail.com (sender verificado en Brevo)
+FROM_NAME = COSOV.
 ADMIN_EMAIL = valencosovschi@hotmail.com
 ```
 
@@ -73,28 +74,39 @@ ADMIN_EMAIL = valencosovschi@hotmail.com
 
 ---
 
-## Emails
+## Emails (Brevo — 300/día gratis, sin dominio propio)
 
-El admin (Valen) recibe una notificación en `valencosovschi@hotmail.com`
-cada vez que entra un pedido nuevo, con todos los datos del pedido +
-costo de producción y margen estimado.
+El sistema manda 3 tipos de mail:
+- **Al cliente** cuando hace un pedido ("pedido recibido").
+- **A Valen** cada vez que entra un pedido (con costo de producción y margen).
+- **Al cliente** cuando Valen cambia el estado (aprobado, en producción, listo, etc).
 
-**Setup mínimo para que ya funcione**:
-1. Crear cuenta en https://resend.com con `valencosovschi@hotmail.com`.
-2. Generar una API key en `Settings > API Keys`.
-3. En Vercel `Settings > Environment Variables` setear:
-   - `RESEND_API_KEY` = la key real (`re_xxx`).
-   - `FROM_EMAIL` = `onboarding@resend.dev` (sender compartido,
-     no requiere verificar dominio).
+**Setup (5 min, 100% gratis, sin DNS ni dominio)**:
+
+1. Crear cuenta en https://app.brevo.com con `valencosovschi@hotmail.com`.
+2. **Verificar el sender** (single-sender verification, sin DNS):
+   - Ir a `Senders, Domains & Dedicated IPs > Senders > Add a Sender`.
+   - Completar: Nombre "COSOV.", email `valencosovschi@hotmail.com`.
+   - Brevo manda un link de confirmación al hotmail; click → queda verificado.
+3. **Generar API key**:
+   - Ir a `SMTP & API > API Keys > Generate a new API key`.
+   - Copiar la key (empieza con `xkeysib-...`).
+4. **En Vercel `Settings > Environment Variables`** agregar:
+   - `BREVO_API_KEY` = la key (`xkeysib-...`).
+   - `FROM_EMAIL` = `valencosovschi@hotmail.com` (el sender verificado).
+   - `FROM_NAME` = `COSOV.` (opcional, es el nombre que ven los clientes).
    - `ADMIN_EMAIL` = `valencosovschi@hotmail.com`.
-4. Re-deploy.
+5. **Eliminar** la env var vieja `RESEND_API_KEY` si existe.
+6. Re-deploy.
 
-**Limitación con `onboarding@resend.dev`**: Resend solo permite enviar
-mails a la dirección registrada en la cuenta (en este caso, el hotmail
-de Valen). El admin notif a Valen llega sin problema, pero las
-confirmaciones a clientes externos no van a salir hasta que se verifique
-un dominio propio en Resend (`pedidos@cosov.com.ar` o el que sea) y se
-cambie `FROM_EMAIL` por ese remitente.
+**No hay limitación de destinatarios**: a diferencia de Resend con
+`onboarding@resend.dev`, Brevo con single-sender verificado puede mandar
+mails a cualquier cliente externo desde el día uno.
+
+**Límite del plan gratis**: 300 mails/día — más que suficiente para una
+pastelería. Si se queda corto, Brevo tiene planes pagos, o se puede
+migrar a otro proveedor sin cambiar código (los nombres de las env vars
+se mantienen parecidos).
 
 Si algún envío falla, queda logueado en Vercel con el prefijo
 `[email]` para debug.
