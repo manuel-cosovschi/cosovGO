@@ -1,7 +1,7 @@
 'use server';
 
 import { createServerClient } from '@/lib/supabase/server';
-import { appendOrderToSheets, getSheetExistingEntries, createNextMonthSheet, listSheetTabs } from '@/lib/google-sheets';
+import { appendOrderToSheets, getSheetExistingEntries, createNextMonthSheet, listSheetTabs, rebuildMonthSheetFromTemplate } from '@/lib/google-sheets';
 import type { Order, OrderItem } from '@/types';
 
 const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -70,6 +70,38 @@ export async function syncMissingOrdersForMonth(
   }
 
   return { success: true, inserted, skipped, errors };
+}
+
+// Rebuilds a month's tab from the Mayo template and re-syncs all that month's
+// orders from the app. Use this to repair a tab that got into a bad state.
+export async function rebuildAndResyncMonth(
+  year: number,
+  month: number
+): Promise<{ success: boolean; rebuilt: boolean; inserted: number; skipped: number; errors: string[]; error?: string }> {
+  const targetMonthName = MESES_ES[month - 1];
+
+  try {
+    await rebuildMonthSheetFromTemplate(targetMonthName, 'Mayo');
+  } catch (err) {
+    return {
+      success: false,
+      rebuilt: false,
+      inserted: 0,
+      skipped: 0,
+      errors: [],
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const sync = await syncMissingOrdersForMonth(year, month);
+  return {
+    success: sync.success,
+    rebuilt: true,
+    inserted: sync.inserted,
+    skipped: sync.skipped,
+    errors: sync.errors,
+    error: sync.error,
+  };
 }
 
 // Called from the dashboard to ensure next month's sheet exists when within 7 days of month end.

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { syncMissingOrdersForMonth, manualCreateNextMonthSheet } from '@/actions/sheet-tools';
+import { syncMissingOrdersForMonth, manualCreateNextMonthSheet, rebuildAndResyncMonth } from '@/actions/sheet-tools';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
@@ -16,6 +16,31 @@ export default function SheetToolsPage() {
   const [syncResult, setSyncResult] = useState<{ inserted: number; skipped: number; errors: string[] } | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
   const [createMsg, setCreateMsg] = useState<string | null>(null);
+  const [rebuildLoading, setRebuildLoading] = useState(false);
+  const [rebuildMsg, setRebuildMsg] = useState<string | null>(null);
+
+  const handleRebuild = async () => {
+    const ok = window.confirm(
+      `Esto BORRA la hoja de ${MESES_ES[currentMonth]} actual, la recrea con el formato exacto de Mayo y vuelve a cargar todos los pedidos de ${MESES_ES[currentMonth]} desde la app. ¿Continuar?`
+    );
+    if (!ok) return;
+    setRebuildLoading(true);
+    setRebuildMsg(null);
+    try {
+      const r = await rebuildAndResyncMonth(currentYear, currentMonth + 1);
+      if (!r.success) {
+        setRebuildMsg(`❌ ${r.error}`);
+      } else {
+        setRebuildMsg(
+          `✅ Hoja de ${MESES_ES[currentMonth]} reconstruida desde Mayo · ${r.inserted} pedido(s) cargado(s)${r.errors.length ? ` · ${r.errors.length} error(es)` : ''}`
+        );
+      }
+    } catch (err) {
+      setRebuildMsg(`❌ ${err instanceof Error ? err.message : 'Error inesperado'}`);
+    } finally {
+      setRebuildLoading(false);
+    }
+  };
 
   const handleSyncCurrentMonth = async () => {
     setSyncLoading(true);
@@ -81,6 +106,24 @@ export default function SheetToolsPage() {
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-amber-200">
+        <CardHeader>
+          <CardTitle className="text-base">Reparar hoja de {MESES_ES[currentMonth]} (reconstruir desde Mayo)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-stone-500">
+            Borra la hoja de {MESES_ES[currentMonth]} y la vuelve a crear con el formato exacto de Mayo
+            (colores, dropdowns, fórmulas del resumen). Después carga todos los pedidos de {MESES_ES[currentMonth]}
+            desde la app. Usalo si la hoja quedó desordenada o con resúmenes duplicados.
+          </p>
+          <Button onClick={handleRebuild} disabled={rebuildLoading} variant="outline" className="border-amber-300 text-amber-800 hover:bg-amber-50">
+            {rebuildLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Reparar hoja de {MESES_ES[currentMonth]} {currentYear}
+          </Button>
+          {rebuildMsg && <p className="text-sm text-stone-600 mt-1">{rebuildMsg}</p>}
         </CardContent>
       </Card>
 
