@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getDashboardStats } from '@/actions/dashboard';
 import { StatsCards } from '@/components/admin/dashboard/stats-cards';
+import { SheetToolsCard } from '@/components/admin/dashboard/sheet-tools-card';
 import { OrderStatusBadge } from '@/components/admin/orders/order-status-badge';
 import { formatDate, formatPrice } from '@/lib/utils';
 import type { OrderStatus } from '@/types';
@@ -77,6 +78,8 @@ export default async function AdminDashboardPage() {
           </div>
         </div>
       )}
+
+      <SheetToolsCard />
 
       {/* Recent orders */}
       <div className="rounded-lg border border-stone-200 bg-white">
