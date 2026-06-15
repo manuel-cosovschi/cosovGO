@@ -19,7 +19,6 @@ function getSheetName(dateStr: string | null | undefined): string {
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
-  // "2024-01-15" → "15/01/2024", sin problema de timezone
   const [year, month, day] = dateStr.split('-');
   return `${day}/${month}/${year}`;
 }
@@ -46,7 +45,6 @@ export async function appendOrderToSheets(order: Order, orderItems: OrderItem[])
   const deliveryDate = formatDate(order.delivery_date);
   const sheetName = getSheetName(order.delivery_date);
 
-  // Una fila por item del pedido
   const rows = orderItems.map((item) => [
     deliveryDate,
     order.contact_name,
@@ -58,12 +56,64 @@ export async function appendOrderToSheets(order: Order, orderItems: OrderItem[])
   ]);
 
   // Empieza desde fila 4 (después de título, instrucciones y headers de Valen)
-  // para que los datos no se inserten después del resumen al final del sheet
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheetName}!A4:G`,
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values: rows },
+  });
+}
+
+export async function getSheetExistingEntries(sheetName: string): Promise<Set<string>> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${sheetName}!A4:C`,
+  });
+
+  const existing = new Set<string>();
+  for (const row of res.data.values ?? []) {
+    const date = row[0] ?? '';
+    const client = row[1] ?? '';
+    const product = row[2] ?? '';
+    if (date && client && product) {
+      existing.add(`${date}|${client}|${product}`);
+    }
+  }
+  return existing;
+}
+
+export async function copySheetFormat(sourceTabName: string, targetTabName: string): Promise<void> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  const sheetMap = new Map(
+    meta.data.sheets?.map((s) => [s.properties?.title ?? '', s.properties?.sheetId ?? 0])
+  );
+
+  const sourceId = sheetMap.get(sourceTabName);
+  const targetId = sheetMap.get(targetTabName);
+
+  if (sourceId == null || targetId == null) {
+    throw new Error(`Tab no encontrado: "${sourceTabName}" o "${targetTabName}"`);
+  }
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          copyPaste: {
+            source: { sheetId: sourceId, startRowIndex: 0, endRowIndex: 500, startColumnIndex: 0, endColumnIndex: 10 },
+            destination: { sheetId: targetId, startRowIndex: 0, endRowIndex: 500, startColumnIndex: 0, endColumnIndex: 10 },
+            pasteType: 'PASTE_FORMAT',
+          },
+        },
+      ],
+    },
   });
 }
