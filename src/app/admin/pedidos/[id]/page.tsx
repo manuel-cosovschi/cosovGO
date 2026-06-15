@@ -8,6 +8,7 @@ import { formatDate, formatDateTime, formatPrice } from '@/lib/utils';
 import { DELIVERY_METHOD_LABELS } from '@/types';
 import type { OrderStatus, DeliveryMethod } from '@/types';
 import { ArrowLeft } from 'lucide-react';
+import { SyncToSheetsButton } from '@/components/admin/orders/sync-to-sheets-button';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -37,7 +38,10 @@ export default async function OrderDetailPage({ params }: Props) {
             Creado el {formatDateTime(order.created_at)}
           </p>
         </div>
-        <OrderStatusBadge status={order.status as OrderStatus} />
+        <div className="flex items-center gap-2">
+          <OrderStatusBadge status={order.status as OrderStatus} />
+          <SyncToSheetsButton orderId={order.id} />
+        </div>
       </div>
 
       {/* Status actions */}
