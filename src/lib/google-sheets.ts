@@ -57,9 +57,11 @@ export async function appendOrderToSheets(order: Order, orderItems: OrderItem[])
     'No',
   ]);
 
+  // Empieza desde fila 4 (después de título, instrucciones y headers de Valen)
+  // para que los datos no se inserten después del resumen al final del sheet
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${sheetName}!A:G`,
+    range: `${sheetName}!A4:G`,
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values: rows },
