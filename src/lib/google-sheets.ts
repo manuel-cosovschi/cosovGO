@@ -33,6 +33,33 @@ function getAuth() {
   });
 }
 
+// Finds the first truly empty row in the data section (starting from row 4),
+// stopping before the resumen section. Returns 1-based row number.
+async function findFirstEmptyDataRow(sheets: ReturnType<typeof google.sheets>, sheetName: string): Promise<number> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${sheetName}!A4:B`,
+  });
+
+  const rows = res.data.values ?? [];
+  for (let i = 0; i < rows.length; i++) {
+    const cellA = (rows[i]?.[0] ?? '').toString().trim();
+    const cellB = (rows[i]?.[1] ?? '').toString().trim();
+
+    // Stop at resumen section marker
+    if (cellA.toUpperCase().includes('RESUMEN') || cellB.toUpperCase().includes('RESUMEN')) {
+      return 4 + i;
+    }
+    // Empty row in data section = first available slot
+    if (!cellA && !cellB) {
+      return 4 + i;
+    }
+  }
+
+  // All scanned rows are data — next row after the last
+  return 4 + rows.length;
+}
+
 export async function appendOrderToSheets(order: Order, orderItems: OrderItem[]): Promise<void> {
   if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
     console.warn('[sheets] Credenciales de Google no configuradas, se omite la integración.');
@@ -55,12 +82,12 @@ export async function appendOrderToSheets(order: Order, orderItems: OrderItem[])
     'No',
   ]);
 
-  // Empieza desde fila 4 (después de título, instrucciones y headers de Valen)
-  await sheets.spreadsheets.values.append({
+  const startRow = await findFirstEmptyDataRow(sheets, sheetName);
+
+  await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${sheetName}!A4:G`,
+    range: `${sheetName}!A${startRow}`,
     valueInputOption: 'USER_ENTERED',
-    insertDataOption: 'INSERT_ROWS',
     requestBody: { values: rows },
   });
 }
@@ -79,6 +106,13 @@ export async function getSheetExistingEntries(sheetName: string): Promise<Set<st
     const date = row[0] ?? '';
     const client = row[1] ?? '';
     const product = row[2] ?? '';
+    // Stop collecting keys once we hit the resumen section
+    if (
+      date.toString().toUpperCase().includes('RESUMEN') ||
+      client.toString().toUpperCase().includes('RESUMEN')
+    ) {
+      break;
+    }
     if (date && client && product) {
       existing.add(`${date}|${client}|${product}`);
     }
@@ -86,34 +120,207 @@ export async function getSheetExistingEntries(sheetName: string): Promise<Set<st
   return existing;
 }
 
-export async function copySheetFormat(sourceTabName: string, targetTabName: string): Promise<void> {
+// Duplicates the previous month's sheet tab for the upcoming month.
+// Clears data rows (4 to resumen-start), updates the title cell, renames the tab.
+export async function createNextMonthSheet(targetYear: number, targetMonth: number): Promise<void> {
   const auth = getAuth();
   const sheets = google.sheets({ version: 'v4', auth });
+
+  const targetMonthName = MESES_ES[targetMonth - 1];
+  const targetTabName = `Pedidos del Mes-${targetMonthName}`;
+
+  // Source = previous month
+  const srcYear = targetMonth === 1 ? targetYear - 1 : targetYear;
+  const srcMonth = targetMonth === 1 ? 12 : targetMonth - 1;
+  const srcMonthName = MESES_ES[srcMonth - 1];
+  const srcTabName = `Pedidos del Mes-${srcMonthName}`;
 
   const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
   const sheetMap = new Map(
     meta.data.sheets?.map((s) => [s.properties?.title ?? '', s.properties?.sheetId ?? 0])
   );
 
-  const sourceId = sheetMap.get(sourceTabName);
-  const targetId = sheetMap.get(targetTabName);
-
-  if (sourceId == null || targetId == null) {
-    throw new Error(`Tab no encontrado: "${sourceTabName}" o "${targetTabName}"`);
+  // If target already exists, skip
+  if (sheetMap.has(targetTabName)) {
+    return;
   }
+
+  const srcId = sheetMap.get(srcTabName);
+  if (srcId == null) {
+    throw new Error(`Tab de origen no encontrado: "${srcTabName}"`);
+  }
+
+  // 1. Duplicate the source tab (copies ALL formatting, validations, dropdowns, formulas)
+  const copyRes = await sheets.spreadsheets.sheets.copyTo({
+    spreadsheetId: SPREADSHEET_ID,
+    sheetId: srcId,
+    requestBody: { destinationSpreadsheetId: SPREADSHEET_ID },
+  });
+
+  const newSheetId = copyRes.data.sheetId!;
+  const copiedTitle = copyRes.data.title ?? `Copy of ${srcTabName}`;
+
+  // 2. Find resumen start row in the new (copied) sheet — read from source since they're identical
+  const dataRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${copiedTitle}!A4:A`,
+  });
+
+  let resumenStartRow = -1;
+  const dataRows = dataRes.data.values ?? [];
+  for (let i = 0; i < dataRows.length; i++) {
+    const cell = (dataRows[i]?.[0] ?? '').toString().trim();
+    if (cell.toUpperCase().includes('RESUMEN')) {
+      resumenStartRow = 4 + i;
+      break;
+    }
+  }
+
+  const requests: object[] = [];
+
+  // 3. Clear data rows (rows 4 to resumen start - 1, or row 4 to end of data if no resumen found)
+  if (resumenStartRow > 4) {
+    // Delete values in A4:I(resumenStartRow-1) — keeps formatting/dropdowns intact
+    requests.push({
+      updateCells: {
+        range: {
+          sheetId: newSheetId,
+          startRowIndex: 3,       // row 4 (0-indexed)
+          endRowIndex: resumenStartRow - 1,
+          startColumnIndex: 0,
+          endColumnIndex: 9,
+        },
+        fields: 'userEnteredValue',
+      },
+    });
+  }
+
+  // 4. Rename tab
+  requests.push({
+    updateSheetProperties: {
+      properties: { sheetId: newSheetId, title: targetTabName },
+      fields: 'title',
+    },
+  });
 
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
-    requestBody: {
-      requests: [
-        {
-          copyPaste: {
-            source: { sheetId: sourceId, startRowIndex: 0, endRowIndex: 500, startColumnIndex: 0, endColumnIndex: 10 },
-            destination: { sheetId: targetId, startRowIndex: 0, endRowIndex: 500, startColumnIndex: 0, endColumnIndex: 10 },
-            pasteType: 'PASTE_FORMAT',
-          },
+    requestBody: { requests },
+  });
+
+  // 5. Update the title cell (A1) from "COSOV — [PREV MONTH]" to "COSOV — [TARGET MONTH]"
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${targetTabName}!A1`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[`COSOV — ${targetMonthName.toUpperCase()}`]] },
+  });
+}
+
+// Rebuilds a month's tab from scratch using a clean template month (default Mayo).
+// Deletes the existing (possibly broken) target tab, duplicates the template,
+// clears its data rows, renames it, and updates the title. Leaves the sheet with
+// the exact format/dropdowns/resumen formulas of the template and NO data rows
+// (ready to be re-synced from the app).
+export async function rebuildMonthSheetFromTemplate(
+  targetMonthName: string,
+  templateMonthName = 'Mayo'
+): Promise<void> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const targetTabName = `Pedidos del Mes-${targetMonthName}`;
+  const templateTabName = `Pedidos del Mes-${templateMonthName}`;
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  const sheetMap = new Map(
+    meta.data.sheets?.map((s) => [s.properties?.title ?? '', s.properties?.sheetId ?? 0])
+  );
+
+  const templateId = sheetMap.get(templateTabName);
+  if (templateId == null) {
+    throw new Error(`Plantilla no encontrada: "${templateTabName}"`);
+  }
+
+  // 1. Delete the existing target tab if it exists (removes the broken state entirely)
+  const existingTargetId = sheetMap.get(targetTabName);
+  if (existingTargetId != null) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: { requests: [{ deleteSheet: { sheetId: existingTargetId } }] },
+    });
+  }
+
+  // 2. Duplicate the template tab (copies ALL formatting, validations, dropdowns, formulas)
+  const copyRes = await sheets.spreadsheets.sheets.copyTo({
+    spreadsheetId: SPREADSHEET_ID,
+    sheetId: templateId,
+    requestBody: { destinationSpreadsheetId: SPREADSHEET_ID },
+  });
+
+  const newSheetId = copyRes.data.sheetId!;
+  const copiedTitle = copyRes.data.title ?? `Copy of ${templateTabName}`;
+
+  // 3. Find resumen start row in the copied sheet (identical to template)
+  const dataRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${copiedTitle}!A4:A`,
+  });
+
+  let resumenStartRow = -1;
+  const dataRows = dataRes.data.values ?? [];
+  for (let i = 0; i < dataRows.length; i++) {
+    const cell = (dataRows[i]?.[0] ?? '').toString().trim();
+    if (cell.toUpperCase().includes('RESUMEN')) {
+      resumenStartRow = 4 + i;
+      break;
+    }
+  }
+
+  const requests: object[] = [];
+
+  // 4. Clear the template's data rows (keeps formatting/dropdowns intact)
+  if (resumenStartRow > 4) {
+    requests.push({
+      updateCells: {
+        range: {
+          sheetId: newSheetId,
+          startRowIndex: 3, // row 4 (0-indexed)
+          endRowIndex: resumenStartRow - 1,
+          startColumnIndex: 0,
+          endColumnIndex: 9,
         },
-      ],
+        fields: 'userEnteredValue',
+      },
+    });
+  }
+
+  // 5. Rename the new tab to the target month
+  requests.push({
+    updateSheetProperties: {
+      properties: { sheetId: newSheetId, title: targetTabName },
+      fields: 'title',
     },
   });
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: { requests },
+  });
+
+  // 6. Update the title cell (A1) to the target month
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${targetTabName}!A1`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[`COSOV — ${targetMonthName.toUpperCase()}`]] },
+  });
+}
+
+export async function listSheetTabs(): Promise<string[]> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  return meta.data.sheets?.map((s) => s.properties?.title ?? '') ?? [];
 }

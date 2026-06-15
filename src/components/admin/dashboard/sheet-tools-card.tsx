@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { repairSheetFormats, syncMissingOrdersForMonth } from '@/actions/sheet-tools';
+import { useState, useEffect } from 'react';
+import { syncMissingOrdersForMonth, manualCreateNextMonthSheet } from '@/actions/sheet-tools';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, Sheet } from 'lucide-react';
+import { Loader2, RefreshCw, Plus } from 'lucide-react';
 
 const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -12,25 +12,29 @@ export function SheetToolsCard() {
   const month = now.getMonth(); // 0-indexed
   const year = now.getFullYear();
   const mesActual = MESES_ES[month];
+  const nextMonthName = MESES_ES[month === 11 ? 0 : month + 1];
 
-  const [formatLoading, setFormatLoading] = useState(false);
-  const [formatMsg, setFormatMsg] = useState<string | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createMsg, setCreateMsg] = useState<string | null>(null);
 
-  const handleRepairFormat = async () => {
-    setFormatLoading(true);
-    setFormatMsg(null);
-    try {
-      const r = await repairSheetFormats([mesActual]);
-      const result = r.results[mesActual] ?? '?';
-      setFormatMsg(result);
-    } catch (err) {
-      setFormatMsg(`❌ ${err instanceof Error ? err.message : 'Error inesperado'}`);
-    } finally {
-      setFormatLoading(false);
+  // Auto-check on mount if we're within 7 days of month end — silently creates next month's sheet
+  useEffect(() => {
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const daysLeft = lastDay - now.getDate();
+    if (daysLeft <= 7) {
+      // Fire-and-forget: the manual button will show status if needed
+      import('@/actions/sheet-tools').then(({ ensureNextMonthSheetExists }) => {
+        ensureNextMonthSheetExists().then((r) => {
+          if (r.created) {
+            setCreateMsg(`✅ Hoja de ${r.monthName} creada automáticamente`);
+          }
+        }).catch(() => {/* silent */});
+      });
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSync = async () => {
     setSyncLoading(true);
@@ -51,26 +55,45 @@ export function SheetToolsCard() {
     }
   };
 
+  const handleCreateNextMonth = async () => {
+    setCreateLoading(true);
+    setCreateMsg(null);
+    try {
+      const r = await manualCreateNextMonthSheet();
+      if (!r.success) {
+        setCreateMsg(`❌ ${r.error}`);
+      } else if (r.alreadyExisted) {
+        setCreateMsg(`✅ La hoja de ${r.monthName} ya existe`);
+      } else {
+        setCreateMsg(`✅ Hoja de ${r.monthName} creada con formato de ${mesActual}`);
+      }
+    } catch (err) {
+      setCreateMsg(`❌ ${err instanceof Error ? err.message : 'Error inesperado'}`);
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   return (
     <div className="rounded-lg border border-stone-200 bg-white">
       <div className="border-b border-stone-200 px-6 py-4">
         <h2 className="font-semibold text-stone-900">Google Sheets — {mesActual} {year}</h2>
         <p className="text-xs text-stone-400 mt-0.5">Herramientas para mantener el sheet del mes actualizado</p>
       </div>
-      <div className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center">
-        <div className="flex flex-col gap-1.5">
-          <Button size="sm" variant="outline" onClick={handleRepairFormat} disabled={formatLoading}>
-            {formatLoading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Sheet className="mr-2 h-3.5 w-3.5" />}
-            Replicar formato de Mayo
-          </Button>
-          {formatMsg && <p className="text-xs text-stone-600">{formatMsg}</p>}
-        </div>
+      <div className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-start">
         <div className="flex flex-col gap-1.5">
           <Button size="sm" onClick={handleSync} disabled={syncLoading}>
             {syncLoading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
             Sincronizar pedidos faltantes
           </Button>
           {syncMsg && <p className="text-xs text-stone-600">{syncMsg}</p>}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Button size="sm" variant="outline" onClick={handleCreateNextMonth} disabled={createLoading}>
+            {createLoading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-2 h-3.5 w-3.5" />}
+            Crear hoja de {nextMonthName}
+          </Button>
+          {createMsg && <p className="text-xs text-stone-600">{createMsg}</p>}
         </div>
       </div>
     </div>
