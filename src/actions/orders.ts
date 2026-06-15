@@ -190,6 +190,38 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
   } as OrderDetail;
 }
 
+export async function syncOrderToSheets(
+  orderId: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerClient();
+
+  const { data: order } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', orderId)
+    .single();
+
+  if (!order) return { success: false, error: 'Pedido no encontrado.' };
+
+  const { data: items } = await supabase
+    .from('order_items')
+    .select('*')
+    .eq('order_id', orderId);
+
+  if (!items || items.length === 0) {
+    return { success: false, error: 'El pedido no tiene items.' };
+  }
+
+  try {
+    await appendOrderToSheets(order as Order, items as OrderItem[]);
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[sheets] syncOrderToSheets falló:', msg);
+    return { success: false, error: msg };
+  }
+}
+
 export async function updateOrderStatus(
   orderId: string,
   newStatus: OrderStatus,
