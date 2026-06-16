@@ -501,6 +501,17 @@ export async function rebuildResumenForMonth(
     requestBody: {
       requests: [
         {
+          unmergeCells: {
+            range: {
+              sheetId,
+              startRowIndex: resumenStartRow - 1,
+              endRowIndex: resumenStartRow - 1 + 80,
+              startColumnIndex: 0,
+              endColumnIndex: 9,
+            },
+          },
+        },
+        {
           updateCells: {
             range: {
               sheetId,
@@ -524,11 +535,60 @@ export async function rebuildResumenForMonth(
     requestBody: { values },
   });
 
-  // 6. Formatting: currency on money columns, bold on titles/headers/totals
-  const titleRow0 = resumenStartRow - 1; // 0-based
-  const headerRow0 = resumenStartRow; // header is the row after title
+  // 6. Formatting to match the Mayo template:
+  //    dark title bands, pink header rows, cream + bordered total rows, currency.
+  const titleRow0 = resumenStartRow - 1; // 'RESUMEN POR CLIENTE' (0-based)
+  const headerRow0 = resumenStartRow; // client header row (0-based)
   const weekTitleRow0 = firstWeekRow - 2 - 1; // 'RESUMEN POR SEMANA' title (0-based)
   const weekHeaderRow0 = firstWeekRow - 1 - 1; // weekly header (0-based)
+  const clientTotalRow0 = totalRow - 1; // client TOTAL MES (0-based)
+  const weekTotalRow0 = lastWrittenRow - 1; // week TOTAL MES (0-based)
+
+  const DARK = { red: 0.26, green: 0.26, blue: 0.26 };
+  const WHITE = { red: 1, green: 1, blue: 1 };
+  const PINK = { red: 0.953, green: 0.6, blue: 0.682 };
+  const CREAM = { red: 1, green: 0.949, blue: 0.8 };
+  const BLACK = { red: 0, green: 0, blue: 0 };
+
+  // Dark full-width title band (text white, bold, centered) + merge across A:I.
+  const titleBand = (row0: number) => [
+    {
+      repeatCell: {
+        range: { sheetId, startRowIndex: row0, endRowIndex: row0 + 1, startColumnIndex: 0, endColumnIndex: 9 },
+        cell: { userEnteredFormat: { backgroundColor: DARK, horizontalAlignment: 'CENTER', textFormat: { bold: true, foregroundColor: WHITE } } },
+        fields: 'userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)',
+      },
+    },
+    { mergeCells: { range: { sheetId, startRowIndex: row0, endRowIndex: row0 + 1, startColumnIndex: 0, endColumnIndex: 9 }, mergeType: 'MERGE_ALL' } },
+  ];
+
+  // Pink bold header row.
+  const headerBand = (row0: number, endCol: number) => ({
+    repeatCell: {
+      range: { sheetId, startRowIndex: row0, endRowIndex: row0 + 1, startColumnIndex: 0, endColumnIndex: endCol },
+      cell: { userEnteredFormat: { backgroundColor: PINK, textFormat: { bold: true } } },
+      fields: 'userEnteredFormat(backgroundColor,textFormat)',
+    },
+  });
+
+  // Cream bold total row + top/bottom border.
+  const totalBand = (row0: number, endCol: number) => [
+    {
+      repeatCell: {
+        range: { sheetId, startRowIndex: row0, endRowIndex: row0 + 1, startColumnIndex: 0, endColumnIndex: endCol },
+        cell: { userEnteredFormat: { backgroundColor: CREAM, textFormat: { bold: true } } },
+        fields: 'userEnteredFormat(backgroundColor,textFormat)',
+      },
+    },
+    {
+      updateBorders: {
+        range: { sheetId, startRowIndex: row0, endRowIndex: row0 + 1, startColumnIndex: 0, endColumnIndex: endCol },
+        top: { style: 'SOLID', color: BLACK },
+        bottom: { style: 'SOLID', color: BLACK },
+      },
+    },
+  ];
+
   const fmtRequests: object[] = [
     // currency on client B:D
     {
@@ -546,14 +606,12 @@ export async function rebuildResumenForMonth(
         fields: 'userEnteredFormat.numberFormat',
       },
     },
-    // bold: client title, client header, client total, week title, week header, week total
-    ...[titleRow0, headerRow0, totalRow - 1, weekTitleRow0, weekHeaderRow0, lastWrittenRow - 1].map((r) => ({
-      repeatCell: {
-        range: { sheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: 0, endColumnIndex: 4 },
-        cell: { userEnteredFormat: { textFormat: { bold: true } } },
-        fields: 'userEnteredFormat.textFormat.bold',
-      },
-    })),
+    ...titleBand(titleRow0),
+    ...titleBand(weekTitleRow0),
+    headerBand(headerRow0, 4),
+    headerBand(weekHeaderRow0, 2),
+    ...totalBand(clientTotalRow0, 4),
+    ...totalBand(weekTotalRow0, 2),
   ];
 
   await sheets.spreadsheets.batchUpdate({
