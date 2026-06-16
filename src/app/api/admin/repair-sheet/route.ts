@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { rebuildAndResyncMonth } from '@/actions/sheet-tools';
+import { rebuildAndResyncMonth, finalizeMonthResumen } from '@/actions/sheet-tools';
 import { readSheetRange } from '@/lib/google-sheets';
 
 // One-time admin endpoint for manual sheet repair.
@@ -33,8 +33,14 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const year = Number(body.year ?? 2026);
   const month = Number(body.month ?? 6);
+  const action = String(body.action ?? 'rebuild');
 
   try {
+    if (action === 'finalize') {
+      const removeNames: string[] = Array.isArray(body.removeContactNames) ? body.removeContactNames : [];
+      const result = await finalizeMonthResumen(year, month, removeNames);
+      return NextResponse.json(result);
+    }
     const result = await rebuildAndResyncMonth(year, month);
     return NextResponse.json(result);
   } catch (err) {
