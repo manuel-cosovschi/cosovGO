@@ -444,13 +444,18 @@ export async function rebuildResumenForMonth(
     if (f) {
       total += f;
       const wk = weekBucket(a);
-      if (wk) {
-        const e = weekly.get(wk.key) ?? { label: wk.label, total: 0, order: wk.order };
-        e.total += f;
-        weekly.set(wk.key, e);
-      }
+      const key = wk ? wk.key : 'zzz-sin-fecha';
+      const label = wk ? wk.label : 'Sin fecha';
+      const order = wk ? wk.order : Number.MAX_SAFE_INTEGER;
+      const e = weekly.get(key) ?? { label, total: 0, order };
+      e.total += f;
+      weekly.set(key, e);
     }
   }
+
+  // Spanish-locale sheets (es-AR) use ';' as the formula argument separator.
+  const locale = meta.data.properties?.locale ?? '';
+  const sep = locale.startsWith('en') ? ',' : ';';
 
   const clients = clientOrder.map((k) => clientSeen.get(k)!);
   const weeks = [...weekly.values()].sort((a, b) => a.order - b.order);
@@ -466,9 +471,9 @@ export async function rebuildResumenForMonth(
     const r = firstClientRow + i;
     values.push([
       name,
-      `=SUMIF($B$4:$B$${DEND},$A${r},$F$4:$F$${DEND})`,
+      `=SUMIF($B$4:$B$${DEND}${sep}$A${r}${sep}$F$4:$F$${DEND})`,
       `=B${r}-D${r}`,
-      `=SUMIFS($F$4:$F$${DEND},$B$4:$B$${DEND},$A${r},$G$4:$G$${DEND},"No")`,
+      `=SUMIFS($F$4:$F$${DEND}${sep}$B$4:$B$${DEND}${sep}$A${r}${sep}$G$4:$G$${DEND}${sep}"No")`,
     ]);
   });
   const lastClientRow = firstClientRow + clients.length - 1;
