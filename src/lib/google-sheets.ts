@@ -324,3 +324,13 @@ export async function listSheetTabs(): Promise<string[]> {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
   return meta.data.sheets?.map((s) => s.properties?.title ?? '') ?? [];
 }
+
+export async function readSheetRange(range: string): Promise<string[][]> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: 'v4', auth });
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range,
+  });
+  return (res.data.values as string[][]) ?? [];
+}
