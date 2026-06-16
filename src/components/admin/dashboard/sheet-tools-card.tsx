@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { syncMissingOrdersForMonth, manualCreateNextMonthSheet } from '@/actions/sheet-tools';
+import { syncMissingOrdersForMonth, manualCreateNextMonthSheet, recalcResumenForMonth } from '@/actions/sheet-tools';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, Plus } from 'lucide-react';
+import { Loader2, RefreshCw, Plus, Calculator } from 'lucide-react';
 
 const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -18,6 +18,8 @@ export function SheetToolsCard() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
   const [createMsg, setCreateMsg] = useState<string | null>(null);
+  const [resumenLoading, setResumenLoading] = useState(false);
+  const [resumenMsg, setResumenMsg] = useState<string | null>(null);
 
   // Auto-check on mount if we're within 7 days of month end — silently creates next month's sheet
   useEffect(() => {
@@ -55,6 +57,23 @@ export function SheetToolsCard() {
     }
   };
 
+  const handleRecalcResumen = async () => {
+    setResumenLoading(true);
+    setResumenMsg(null);
+    try {
+      const r = await recalcResumenForMonth(year, month + 1);
+      if (!r.success) {
+        setResumenMsg(`❌ ${r.error}`);
+      } else {
+        setResumenMsg(`✅ Resumen recalculado · ${r.clients?.length ?? 0} clientes · $${(r.total ?? 0).toLocaleString('es-AR')}`);
+      }
+    } catch (err) {
+      setResumenMsg(`❌ ${err instanceof Error ? err.message : 'Error inesperado'}`);
+    } finally {
+      setResumenLoading(false);
+    }
+  };
+
   const handleCreateNextMonth = async () => {
     setCreateLoading(true);
     setCreateMsg(null);
@@ -87,6 +106,13 @@ export function SheetToolsCard() {
             Sincronizar pedidos faltantes
           </Button>
           {syncMsg && <p className="text-xs text-stone-600">{syncMsg}</p>}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Button size="sm" variant="outline" onClick={handleRecalcResumen} disabled={resumenLoading}>
+            {resumenLoading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Calculator className="mr-2 h-3.5 w-3.5" />}
+            Recalcular resumen
+          </Button>
+          {resumenMsg && <p className="text-xs text-stone-600">{resumenMsg}</p>}
         </div>
         <div className="flex flex-col gap-1.5">
           <Button size="sm" variant="outline" onClick={handleCreateNextMonth} disabled={createLoading}>
