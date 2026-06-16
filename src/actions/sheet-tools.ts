@@ -1,6 +1,7 @@
 'use server';
 
 import { createServerClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { appendOrderToSheets, getSheetExistingEntries, createNextMonthSheet, listSheetTabs, rebuildMonthSheetFromTemplate, rebuildResumenForMonth } from '@/lib/google-sheets';
 import type { Order, OrderItem } from '@/types';
 
@@ -13,23 +14,31 @@ export async function deleteOrdersByContactName(
   month: number,
   contactName: string
 ): Promise<{ deleted: number; error?: string }> {
-  const supabase = await createServerClient();
+  // Service-role client to bypass RLS (this runs without a user session).
+  const supabase = createAdminClient();
   const monthStr = String(month).padStart(2, '0');
   const from = `${year}-${monthStr}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const to = `${year}-${monthStr}-${lastDay}`;
 
+  // Match by name; delivery_date may be null for some orders, so don't filter it out.
   const { data: orders, error } = await supabase
     .from('orders')
-    .select('id')
-    .ilike('contact_name', contactName)
-    .gte('delivery_date', from)
-    .lte('delivery_date', to);
+    .select('id, delivery_date')
+    .ilike('contact_name', contactName);
 
   if (error) return { deleted: 0, error: error.message };
   if (!orders || orders.length === 0) return { deleted: 0 };
 
-  const ids = orders.map((o) => o.id);
+  const ids = orders
+    .filter((o) => {
+      const dd = (o as { delivery_date?: string | null }).delivery_date;
+      return !dd || (dd >= from && dd <= to);
+    })
+    .map((o) => o.id);
+
+  if (ids.length === 0) return { deleted: 0 };
+
   await supabase.from('order_items').delete().in('order_id', ids);
   const { error: delErr } = await supabase.from('orders').delete().in('id', ids);
   if (delErr) return { deleted: 0, error: delErr.message };
