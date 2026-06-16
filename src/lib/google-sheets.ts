@@ -334,3 +334,233 @@ export async function readSheetRange(range: string): Promise<string[][]> {
   });
   return (res.data.values as string[][]) ?? [];
 }
+
+function parseMoney(s: string): number {
+  if (!s) return 0;
+  const digits = s.replace(/[^\d]/g, '');
+  return digits ? parseInt(digits, 10) : 0;
+}
+
+// Computes the Monday–Sunday week bucket for a "DD/MM/YYYY" date string.
+function weekBucket(dateStr: string): { key: string; label: string; order: number } | null {
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return null;
+  const d = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const y = parseInt(parts[2], 10);
+  if (!d || !m || !y) return null;
+  const date = new Date(y, m - 1, d);
+  const offset = (date.getDay() + 6) % 7; // 0 = Monday
+  const monday = new Date(date);
+  monday.setDate(date.getDate() - offset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = (x: Date) => `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}`;
+  return {
+    key: monday.toISOString().slice(0, 10),
+    label: `${fmt(monday)} - ${fmt(sunday)}`,
+    order: monday.getTime(),
+  };
+}
+
+const MONEY_FORMAT = '"$"#,##0';
+
+// Rebuilds the "RESUMEN" section of a month's tab with LIVE formulas that
+// auto-sum every client present in the data (including new ones), plus a weekly
+// breakdown with real dates. Optionally deletes data rows for the given clients
+// (e.g. test orders) first. Returns a summary of what was built.
+export async function rebuildResumenForMonth(
+  tabName: string,
+  removeClients: string[] = []
+): Promise<{ clients: string[]; total: number; resumenStartRow: number; dataEndRow: number; weeks: { label: string; total: number }[] }> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  const sheet = meta.data.sheets?.find((s) => s.properties?.title === tabName);
+  if (!sheet) throw new Error(`Tab no encontrado: ${tabName}`);
+  const sheetId = sheet.properties!.sheetId!;
+
+  const readData = async () => {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${tabName}!A4:G`,
+    });
+    return res.data.values ?? [];
+  };
+
+  // 1. Delete data rows whose client matches removeClients (bottom-up to keep indices valid)
+  if (removeClients.length) {
+    const rows = await readData();
+    const removeSet = new Set(removeClients.map((c) => c.toLowerCase().trim()));
+    const toDelete: number[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const a = (rows[i]?.[0] ?? '').toString();
+      if (a.toUpperCase().includes('RESUMEN')) break;
+      const client = (rows[i]?.[1] ?? '').toString().toLowerCase().trim();
+      if (client && removeSet.has(client)) toDelete.push(3 + i); // 0-based row index (row 4 = index 3)
+    }
+    toDelete.sort((x, y) => y - x);
+    if (toDelete.length) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          requests: toDelete.map((idx) => ({
+            deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: idx, endIndex: idx + 1 } },
+          })),
+        },
+      });
+    }
+  }
+
+  // 2. Re-read; locate resumen start, distinct clients, weekly buckets, grand total
+  const rows = await readData();
+  let resumenIdx = rows.length;
+  for (let i = 0; i < rows.length; i++) {
+    if ((rows[i]?.[0] ?? '').toString().toUpperCase().includes('RESUMEN')) {
+      resumenIdx = i;
+      break;
+    }
+  }
+  const resumenStartRow = 4 + resumenIdx; // 1-based
+  const dataEndRow = resumenStartRow - 1; // formulas reference A4:G{dataEndRow}
+
+  const clientOrder: string[] = [];
+  const clientSeen = new Map<string, string>();
+  const weekly = new Map<string, { label: string; total: number; order: number }>();
+  let total = 0;
+
+  for (let i = 0; i < resumenIdx; i++) {
+    const a = (rows[i]?.[0] ?? '').toString().trim();
+    const client = (rows[i]?.[1] ?? '').toString().trim();
+    const f = parseMoney((rows[i]?.[5] ?? '').toString());
+    if (client) {
+      const k = client.toLowerCase();
+      if (!clientSeen.has(k)) {
+        clientSeen.set(k, client);
+        clientOrder.push(k);
+      }
+    }
+    if (f) {
+      total += f;
+      const wk = weekBucket(a);
+      if (wk) {
+        const e = weekly.get(wk.key) ?? { label: wk.label, total: 0, order: wk.order };
+        e.total += f;
+        weekly.set(wk.key, e);
+      }
+    }
+  }
+
+  const clients = clientOrder.map((k) => clientSeen.get(k)!);
+  const weeks = [...weekly.values()].sort((a, b) => a.order - b.order);
+
+  // 3. Build the resumen rows (values + formulas)
+  const DEND = dataEndRow;
+  const values: (string | number)[][] = [];
+
+  values.push([`RESUMEN POR CLIENTE`]); // title
+  values.push(['Cliente', 'Total pedido', 'Cobrado', 'Pendiente']);
+  const firstClientRow = resumenStartRow + values.length; // 1-based row of first client
+  clients.forEach((name, i) => {
+    const r = firstClientRow + i;
+    values.push([
+      name,
+      `=SUMIF($B$4:$B$${DEND},$A${r},$F$4:$F$${DEND})`,
+      `=B${r}-D${r}`,
+      `=SUMIFS($F$4:$F$${DEND},$B$4:$B$${DEND},$A${r},$G$4:$G$${DEND},"No")`,
+    ]);
+  });
+  const lastClientRow = firstClientRow + clients.length - 1;
+  const totalRow = lastClientRow + 1;
+  values.push([
+    'TOTAL MES',
+    `=SUM(B${firstClientRow}:B${lastClientRow})`,
+    `=SUM(C${firstClientRow}:C${lastClientRow})`,
+    `=SUM(D${firstClientRow}:D${lastClientRow})`,
+  ]);
+  values.push([]); // blank
+
+  values.push(['RESUMEN POR SEMANA']);
+  values.push(['Semana', 'Total']);
+  const firstWeekRow = resumenStartRow + values.length;
+  weeks.forEach((w) => values.push([w.label, w.total]));
+  const lastWeekRow = firstWeekRow + weeks.length - 1;
+  values.push(['TOTAL MES', `=SUM(B${firstWeekRow}:B${lastWeekRow})`]);
+
+  const lastWrittenRow = resumenStartRow + values.length - 1;
+
+  // 4. Clear the old resumen region (values + formats) before writing
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          updateCells: {
+            range: {
+              sheetId,
+              startRowIndex: resumenStartRow - 1,
+              endRowIndex: resumenStartRow - 1 + 80,
+              startColumnIndex: 0,
+              endColumnIndex: 9,
+            },
+            fields: 'userEnteredValue,userEnteredFormat',
+          },
+        },
+      ],
+    },
+  });
+
+  // 5. Write the new resumen values/formulas
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${tabName}!A${resumenStartRow}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values },
+  });
+
+  // 6. Formatting: currency on money columns, bold on titles/headers/totals
+  const titleRow0 = resumenStartRow - 1; // 0-based
+  const headerRow0 = resumenStartRow; // header is the row after title
+  const weekTitleRow0 = firstWeekRow - 2 - 1; // 'RESUMEN POR SEMANA' title (0-based)
+  const weekHeaderRow0 = firstWeekRow - 1 - 1; // weekly header (0-based)
+  const fmtRequests: object[] = [
+    // currency on client B:D
+    {
+      repeatCell: {
+        range: { sheetId, startRowIndex: firstClientRow - 1, endRowIndex: totalRow, startColumnIndex: 1, endColumnIndex: 4 },
+        cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: MONEY_FORMAT } } },
+        fields: 'userEnteredFormat.numberFormat',
+      },
+    },
+    // currency on weekly B
+    {
+      repeatCell: {
+        range: { sheetId, startRowIndex: firstWeekRow - 1, endRowIndex: lastWeekRow + 1, startColumnIndex: 1, endColumnIndex: 2 },
+        cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: MONEY_FORMAT } } },
+        fields: 'userEnteredFormat.numberFormat',
+      },
+    },
+    // bold: client title, client header, client total, week title, week header, week total
+    ...[titleRow0, headerRow0, totalRow - 1, weekTitleRow0, weekHeaderRow0, lastWrittenRow - 1].map((r) => ({
+      repeatCell: {
+        range: { sheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: 0, endColumnIndex: 4 },
+        cell: { userEnteredFormat: { textFormat: { bold: true } } },
+        fields: 'userEnteredFormat.textFormat.bold',
+      },
+    })),
+  ];
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: { requests: fmtRequests },
+  });
+
+  return {
+    clients,
+    total,
+    resumenStartRow,
+    dataEndRow,
+    weeks: weeks.map((w) => ({ label: w.label, total: w.total })),
+  };
+}

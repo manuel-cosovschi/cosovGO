@@ -1,10 +1,61 @@
 'use server';
 
 import { createServerClient } from '@/lib/supabase/server';
-import { appendOrderToSheets, getSheetExistingEntries, createNextMonthSheet, listSheetTabs, rebuildMonthSheetFromTemplate } from '@/lib/google-sheets';
+import { appendOrderToSheets, getSheetExistingEntries, createNextMonthSheet, listSheetTabs, rebuildMonthSheetFromTemplate, rebuildResumenForMonth } from '@/lib/google-sheets';
 import type { Order, OrderItem } from '@/types';
 
 const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+// Deletes orders (and their items) whose contact_name matches, within a month.
+// Used to remove owner test orders so they don't reappear on re-sync.
+export async function deleteOrdersByContactName(
+  year: number,
+  month: number,
+  contactName: string
+): Promise<{ deleted: number; error?: string }> {
+  const supabase = await createServerClient();
+  const monthStr = String(month).padStart(2, '0');
+  const from = `${year}-${monthStr}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const to = `${year}-${monthStr}-${lastDay}`;
+
+  const { data: orders, error } = await supabase
+    .from('orders')
+    .select('id')
+    .ilike('contact_name', contactName)
+    .gte('delivery_date', from)
+    .lte('delivery_date', to);
+
+  if (error) return { deleted: 0, error: error.message };
+  if (!orders || orders.length === 0) return { deleted: 0 };
+
+  const ids = orders.map((o) => o.id);
+  await supabase.from('order_items').delete().in('order_id', ids);
+  const { error: delErr } = await supabase.from('orders').delete().in('id', ids);
+  if (delErr) return { deleted: 0, error: delErr.message };
+  return { deleted: ids.length };
+}
+
+// Rebuilds the resumen of a month with live auto formulas, optionally removing
+// test orders both from the app DB and the sheet first.
+export async function finalizeMonthResumen(
+  year: number,
+  month: number,
+  removeContactNames: string[] = []
+): Promise<{ success: boolean; clients?: string[]; total?: number; weeks?: { label: string; total: number }[]; dbDeleted?: number; error?: string }> {
+  const tabName = `Pedidos del Mes-${MESES_ES[month - 1]}`;
+  try {
+    let dbDeleted = 0;
+    for (const name of removeContactNames) {
+      const r = await deleteOrdersByContactName(year, month, name);
+      dbDeleted += r.deleted;
+    }
+    const res = await rebuildResumenForMonth(tabName, removeContactNames);
+    return { success: true, clients: res.clients, total: res.total, weeks: res.weeks, dbDeleted };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 export async function syncMissingOrdersForMonth(
   year: number,
