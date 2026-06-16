@@ -129,7 +129,28 @@ export async function syncMissingOrdersForMonth(
     }
   }
 
+  // Keep the resumen fresh (picks up new clients) after syncing. Best-effort.
+  try {
+    await rebuildResumenForMonth(sheetName);
+  } catch (err) {
+    errors.push(`Resumen: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   return { success: true, inserted, skipped, errors };
+}
+
+// Recomputes the auto resumen for a month on demand (without re-syncing data).
+export async function recalcResumenForMonth(
+  year: number,
+  month: number
+): Promise<{ success: boolean; clients?: string[]; total?: number; error?: string }> {
+  const tabName = `Pedidos del Mes-${MESES_ES[month - 1]}`;
+  try {
+    const res = await rebuildResumenForMonth(tabName);
+    return { success: true, clients: res.clients, total: res.total };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 // Rebuilds a month's tab from the Mayo template and re-syncs all that month's

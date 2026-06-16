@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { syncMissingOrdersForMonth, manualCreateNextMonthSheet, rebuildAndResyncMonth } from '@/actions/sheet-tools';
+import { syncMissingOrdersForMonth, manualCreateNextMonthSheet, rebuildAndResyncMonth, recalcResumenForMonth } from '@/actions/sheet-tools';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
@@ -18,6 +18,25 @@ export default function SheetToolsPage() {
   const [createMsg, setCreateMsg] = useState<string | null>(null);
   const [rebuildLoading, setRebuildLoading] = useState(false);
   const [rebuildMsg, setRebuildMsg] = useState<string | null>(null);
+  const [resumenLoading, setResumenLoading] = useState(false);
+  const [resumenMsg, setResumenMsg] = useState<string | null>(null);
+
+  const handleRecalcResumen = async () => {
+    setResumenLoading(true);
+    setResumenMsg(null);
+    try {
+      const r = await recalcResumenForMonth(currentYear, currentMonth + 1);
+      if (!r.success) {
+        setResumenMsg(`❌ ${r.error}`);
+      } else {
+        setResumenMsg(`✅ Resumen recalculado · ${r.clients?.length ?? 0} clientes · total $${(r.total ?? 0).toLocaleString('es-AR')}`);
+      }
+    } catch (err) {
+      setResumenMsg(`❌ ${err instanceof Error ? err.message : 'Error inesperado'}`);
+    } finally {
+      setResumenLoading(false);
+    }
+  };
 
   const handleRebuild = async () => {
     const ok = window.confirm(
@@ -106,6 +125,24 @@ export default function SheetToolsPage() {
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Recalcular resumen — {MESES_ES[currentMonth]} {currentYear}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-stone-500">
+            Reescribe el resumen del mes con fórmulas que suman automáticamente todos los clientes
+            (incluidos los nuevos), Total / Cobrado / Pendiente y el detalle por semana. Se recalcula
+            solo cada vez que sincronizás, pero podés forzarlo acá.
+          </p>
+          <Button onClick={handleRecalcResumen} disabled={resumenLoading} variant="outline">
+            {resumenLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Recalcular resumen de {MESES_ES[currentMonth]}
+          </Button>
+          {resumenMsg && <p className="text-sm text-stone-600 mt-1">{resumenMsg}</p>}
         </CardContent>
       </Card>
 
