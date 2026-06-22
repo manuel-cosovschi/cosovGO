@@ -14,6 +14,7 @@ import {
   X,
   Egg,
   BarChart3,
+  TrendingUp,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -22,6 +23,7 @@ import { useRouter } from 'next/navigation';
 
 const sidebarLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin/movimientos', label: 'Movimientos', icon: TrendingUp },
   { href: '/admin/pedidos', label: 'Pedidos', icon: ClipboardList },
   { href: '/admin/productos', label: 'Productos', icon: Package },
   { href: '/admin/paquetes', label: 'Paquetes', icon: BoxesIcon },
