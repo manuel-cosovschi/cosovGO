@@ -145,6 +145,7 @@ export interface Order {
   cobrado: boolean;
   fecha_cobro: string | null;
   forma_pago: string | null;
+  costo_envio: number | null;
   created_at: string;
   updated_at: string;
 }

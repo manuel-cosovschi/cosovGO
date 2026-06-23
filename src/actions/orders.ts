@@ -277,3 +277,18 @@ export async function updateOrderStatus(
 
   return { success: true };
 }
+
+export async function updateCostoEnvio(
+  orderId: string,
+  costoEnvio: number | null
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from('orders')
+    .update({ costo_envio: costoEnvio })
+    .eq('id', orderId);
+  if (error) return { success: false, error: 'Error al guardar el costo de envío.' };
+  revalidatePath('/admin/pedidos');
+  revalidatePath(`/admin/pedidos/${orderId}`);
+  return { success: true };
+}

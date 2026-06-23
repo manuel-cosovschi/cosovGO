@@ -9,6 +9,7 @@ import { DELIVERY_METHOD_LABELS } from '@/types';
 import type { OrderStatus, DeliveryMethod } from '@/types';
 import { ArrowLeft } from 'lucide-react';
 import { SyncToSheetsButton } from '@/components/admin/orders/sync-to-sheets-button';
+import { DownloadComprobanteButton } from '@/components/admin/orders/download-comprobante-button';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -41,6 +42,7 @@ export default async function OrderDetailPage({ params }: Props) {
         <div className="flex items-center gap-2">
           <OrderStatusBadge status={order.status as OrderStatus} />
           <SyncToSheetsButton orderId={order.id} />
+          <DownloadComprobanteButton orderId={order.id} orderNumber={order.order_number} />
         </div>
       </div>
 
@@ -50,7 +52,12 @@ export default async function OrderDetailPage({ params }: Props) {
           <CardTitle className="text-base">Cambiar estado</CardTitle>
         </CardHeader>
         <CardContent>
-          <OrderStatusActions orderId={order.id} currentStatus={order.status as OrderStatus} />
+          <OrderStatusActions
+            orderId={order.id}
+            currentStatus={order.status as OrderStatus}
+            deliveryMethod={order.delivery_method}
+            currentCostoEnvio={order.costo_envio}
+          />
         </CardContent>
       </Card>
 
@@ -146,8 +153,20 @@ export default async function OrderDetailPage({ params }: Props) {
           </div>
           <div className="mt-4 space-y-2 border-t border-stone-200 pt-4">
             <div className="flex items-center justify-between">
+              <span className="text-stone-600 text-sm">Subtotal productos</span>
+              <span className="font-medium">{formatPrice(order.subtotal)}</span>
+            </div>
+            {order.costo_envio != null && order.costo_envio > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-stone-600">Costo de envío</span>
+                <span className="font-medium">{formatPrice(order.costo_envio)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between border-t border-stone-200 pt-2">
               <span className="text-lg font-semibold">Total facturado</span>
-              <span className="text-lg font-bold">{formatPrice(order.subtotal)}</span>
+              <span className="text-lg font-bold">
+                {formatPrice(order.subtotal + (order.costo_envio ?? 0))}
+              </span>
             </div>
             {order.production_cost != null && (
               <>
