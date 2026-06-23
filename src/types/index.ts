@@ -142,8 +142,49 @@ export interface Order {
   subtotal: number;
   production_cost: number | null;
   admin_notes: string | null;
+  cobrado: boolean;
+  fecha_cobro: string | null;
+  forma_pago: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export const GASTO_CATEGORIAS = [
+  'Materia prima',
+  'Sueldos',
+  'Packaging',
+  'Envíos',
+  'Servicios',
+  'Equipamiento',
+  'Personal',
+  'Papelera',
+  'Otros',
+] as const;
+export type GastoCategoria = (typeof GASTO_CATEGORIAS)[number];
+
+export interface Gasto {
+  id: string;
+  fecha: string;
+  categoria: string;
+  proveedor: string | null;
+  monto: number;
+  forma_pago: string | null;
+  nota: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGastoInput {
+  fecha: string;
+  categoria: string;
+  proveedor?: string;
+  monto: number;
+  forma_pago?: string;
+  nota?: string;
+}
+
+export interface OrderWithItems extends Order {
+  items: OrderItem[];
 }
 
 export interface OrderItem {
