@@ -15,6 +15,7 @@ import {
   Egg,
   BarChart3,
   TrendingUp,
+  HelpCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -31,6 +32,7 @@ const sidebarLinks = [
   { href: '/admin/ingredientes', label: 'Ingredientes', icon: Egg },
   { href: '/admin/inventario', label: 'Inventario', icon: BarChart3 },
   { href: '/admin/configuracion', label: 'Configuración', icon: Settings },
+  { href: '/admin/guia', label: 'Guía', icon: HelpCircle },
 ];
 
 export function AdminSidebar() {
