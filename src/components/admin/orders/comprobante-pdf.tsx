@@ -346,7 +346,7 @@ export function ComprobantePDF({ order }: Props) {
         <View style={s.footer}>
           <Text style={s.footerThanks}>¡Gracias por tu pedido!</Text>
           <Text style={s.footerContact}>
-            cosov.bsas@gmail.com{'\n'}Instagram: @cosov.bsas
+            Instagram: @cosov_
           </Text>
         </View>
       </Page>

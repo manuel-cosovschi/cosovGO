@@ -20,9 +20,14 @@ export async function getOrdersForMonth(
   const supabase = await createServerClient();
   const { from, to } = monthRange(year, month);
 
+  // Solo pedidos que Valen aprobó (aprobado en adelante). Quedan afuera los
+  // que todavía no revisó (recibido, pendiente), los rechazados y cancelados.
+  const APROBADOS = ['approved', 'active', 'in_production', 'ready', 'shipped', 'delivered'];
+
   const { data: orders, error } = await supabase
     .from('orders')
     .select('*')
+    .in('status', APROBADOS)
     .gte('delivery_date', from)
     .lte('delivery_date', to)
     .order('delivery_date', { ascending: true })
