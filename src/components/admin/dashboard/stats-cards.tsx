@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ClipboardList, Clock, ChefHat, Truck, AlertTriangle, DollarSign } from 'lucide-react';
+import { ClipboardList, Clock, ChefHat, Truck, DollarSign } from 'lucide-react';
 import { formatPrice } from '@/lib/utils';
 import type { DashboardStats } from '@/types';
 
@@ -34,16 +34,10 @@ export function StatsCards({ stats }: StatsCardsProps) {
       color: 'text-emerald-600',
     },
     {
-      title: 'Inventario total',
-      value: formatPrice(stats.valuation?.total_value || 0),
+      title: 'Valor en ingredientes',
+      value: formatPrice(stats.valuation?.ingredients_value || 0),
       icon: DollarSign,
       color: 'text-stone-600',
-    },
-    {
-      title: 'Alertas de stock',
-      value: String((stats.low_ingredients_count || 0) + (stats.low_products_count || 0)),
-      icon: AlertTriangle,
-      color: (stats.low_ingredients_count || 0) + (stats.low_products_count || 0) > 0 ? 'text-red-600' : 'text-stone-400',
     },
   ];
 

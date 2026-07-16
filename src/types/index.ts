@@ -90,8 +90,15 @@ export interface Product {
   is_active: boolean;
   sale_unit: string;
   min_quantity: number;
+  /** Los pedidos deben ser múltiplos de este número (ej: brownies de a 12). */
+  sale_multiple: number;
   min_advance_hours: number | null;
   sort_order: number;
+  // Seguimiento de costo (se completa al actualizar materia prima / receta)
+  cost_snapshot: number | null;
+  cost_snapshot_at: string | null;
+  cost_prev: number | null;
+  cost_prev_at: string | null;
   created_at: string;
   updated_at: string;
   category?: Category;
@@ -251,6 +258,7 @@ export interface CreateProductInput {
   gallery_urls?: string[];
   sale_unit?: string;
   min_quantity?: number;
+  sale_multiple?: number;
   min_advance_hours?: number | null;
   is_active?: boolean;
 }
@@ -428,6 +436,10 @@ export interface CartItem {
   image_url: string | null;
   min_advance_hours: number | null;
   sale_unit: string;
+  /** Cantidad mínima que se puede pedir (default 1). */
+  min_quantity?: number;
+  /** El pedido debe ser múltiplo de este número (default 1). */
+  sale_multiple?: number;
 }
 
 // === Tracking de pedido (público) ===

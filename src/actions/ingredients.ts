@@ -2,6 +2,7 @@
 
 import { createServerClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { snapshotProductCosts } from './products';
 import type {
   Ingredient,
   CreateIngredientInput,
@@ -87,8 +88,15 @@ export async function updateIngredient(
     return { success: false, error: 'Error al actualizar el ingrediente.' };
   }
 
+  // Si cambió el costo de la materia prima, registramos la variación de costo
+  // en los productos que la usan.
+  if ('cost_per_unit' in input) {
+    await snapshotProductCosts();
+  }
+
   revalidatePath('/admin/ingredientes');
   revalidatePath(`/admin/ingredientes/${id}`);
+  revalidatePath('/admin/productos');
   return { success: true };
 }
 
@@ -172,9 +180,13 @@ export async function registerPurchase(
     created_by: user?.id || null,
   });
 
+  // El costo de la materia prima cambió → registramos variación en productos.
+  await snapshotProductCosts();
+
   revalidatePath('/admin/ingredientes');
   revalidatePath(`/admin/ingredientes/${ingredientId}`);
   revalidatePath('/admin');
+  revalidatePath('/admin/productos');
   return { success: true };
 }
 
@@ -214,7 +226,11 @@ export async function saveProductRecipe(
     if (error) return { success: false, error: 'Error al guardar la receta.' };
   }
 
+  // La receta define el costo del producto → registramos su costo.
+  await snapshotProductCosts([productId]);
+
   revalidatePath(`/admin/productos/${productId}`);
+  revalidatePath('/admin/productos');
   return { success: true };
 }
 
@@ -265,7 +281,6 @@ export async function registerProduction(
 ): Promise<{ success: boolean; alerts?: string[]; error?: string }> {
   const supabase = await createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const alerts: string[] = [];
 
   // Get product with batch_size
   const { data: product } = await supabase
@@ -278,43 +293,8 @@ export async function registerProduction(
 
   const unitsProduced = batches * (product.batch_size || 1);
 
-  // Get recipe
-  const { data: recipe } = await supabase
-    .from('recipe_items')
-    .select('*, ingredient:ingredients(*)')
-    .eq('product_id', productId);
-
-  // Deduct ingredients
-  if (recipe && recipe.length > 0) {
-    for (const item of recipe) {
-      const consumption = item.quantity_per_batch * batches;
-      const ingredient = item.ingredient as Ingredient;
-
-      const newStock = ingredient.stock_quantity - consumption;
-
-      await supabase
-        .from('ingredients')
-        .update({ stock_quantity: newStock })
-        .eq('id', item.ingredient_id);
-
-      await supabase.from('stock_movements').insert({
-        reference_type: 'ingredient',
-        reference_id: item.ingredient_id,
-        movement_type: 'production_consumption',
-        quantity: -consumption,
-        notes: `Producción: ${batches} lote(s) de ${product.name}`,
-        created_by: user?.id || null,
-      });
-
-      if (newStock < ingredient.min_stock_quantity) {
-        alerts.push(`Stock bajo de ${ingredient.name}: quedan ${newStock} ${ingredient.unit}`);
-      }
-    }
-  } else {
-    alerts.push(`${product.name} no tiene receta cargada. No se descontaron ingredientes.`);
-  }
-
-  // Add produced units to product stock
+  // Registrar producción NO descuenta ingredientes: el stock de materia prima
+  // lo maneja Valen a mano. Solo sumamos las unidades producidas al producto.
   await supabase
     .from('products')
     .update({ stock_quantity: product.stock_quantity + unitsProduced })
@@ -330,9 +310,8 @@ export async function registerProduction(
   });
 
   revalidatePath(`/admin/productos/${productId}`);
-  revalidatePath('/admin/ingredientes');
   revalidatePath('/admin');
-  return { success: true, alerts: alerts.length > 0 ? alerts : undefined };
+  return { success: true };
 }
 
 // === Stock Movements History ===

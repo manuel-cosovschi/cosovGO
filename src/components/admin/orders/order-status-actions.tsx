@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { VALID_TRANSITIONS, ORDER_STATUS_LABELS, type OrderStatus } from '@/types';
 import { updateOrderStatus, updateCostoEnvio } from '@/actions/orders';
-import { approveOrderWithStockImpact } from '@/actions/inventory';
 import { toast } from 'sonner';
 import { Loader2, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -45,12 +44,9 @@ export function OrderStatusActions({
       }
       await updateCostoEnvio(orderId, costoNum);
 
-      const result = await approveOrderWithStockImpact(orderId);
+      const result = await updateOrderStatus(orderId, 'approved');
       if (result.success) {
         toast.success('Pedido aprobado');
-        if (result.alerts && result.alerts.length > 0) {
-          result.alerts.forEach((alert) => toast.warning(alert, { duration: 8000 }));
-        }
         setShowApproveForm(false);
         onStatusChange?.();
         router.refresh();

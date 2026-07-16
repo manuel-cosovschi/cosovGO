@@ -46,12 +46,14 @@ export function ProductForm({ product, categories }: ProductFormProps) {
           image_url: product.image_url,
           sale_unit: product.sale_unit,
           min_quantity: product.min_quantity,
+          sale_multiple: product.sale_multiple ?? 1,
           min_advance_hours: product.min_advance_hours,
           is_active: product.is_active,
         }
       : {
           sale_unit: 'unidad',
           min_quantity: 1,
+          sale_multiple: 1,
           is_active: true,
         },
   });
@@ -148,6 +150,25 @@ export function ProductForm({ product, categories }: ProductFormProps) {
             type="number"
             {...register('min_quantity', { valueAsNumber: true })}
           />
+          <p className="text-xs text-stone-400">
+            Lo menos que puede pedir un cliente.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="sale_multiple">Se vende de a (múltiplo)</Label>
+          <Input
+            id="sale_multiple"
+            type="number"
+            min={1}
+            {...register('sale_multiple', { valueAsNumber: true })}
+          />
+          <p className="text-xs text-stone-400">
+            Ej: brownies que salen de a 12 → poné 12. Si no aplica, dejá 1.
+          </p>
+          {errors.sale_multiple && (
+            <p className="text-sm text-red-600">{errors.sale_multiple.message}</p>
+          )}
         </div>
 
         <div className="space-y-2 sm:col-span-2">

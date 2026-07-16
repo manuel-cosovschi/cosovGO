@@ -16,6 +16,7 @@ export const productSchema = z.object({
   gallery_urls: z.array(z.string().url()).optional(),
   sale_unit: z.string().default('unidad'),
   min_quantity: z.number().int().min(1).default(1),
+  sale_multiple: z.number().int().min(1).default(1),
   min_advance_hours: z.number().int().min(1).optional().nullable(),
   is_active: z.boolean().default(true),
 });
