@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/components/cart/cart-provider';
-import { formatPrice } from '@/lib/utils';
+import { formatPrice, minValidQuantity } from '@/lib/utils';
 import type { Product } from '@/types';
 import { toast } from 'sonner';
 
@@ -18,17 +18,20 @@ export function ProductCard({ product }: ProductCardProps) {
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
+    const qty = minValidQuantity(product.min_quantity, product.sale_multiple);
     addItem({
       id: product.id,
       type: 'product',
       name: product.name,
       price: product.price,
-      quantity: product.min_quantity || 1,
+      quantity: qty,
       image_url: product.image_url,
       min_advance_hours: product.min_advance_hours,
       sale_unit: product.sale_unit,
+      min_quantity: product.min_quantity,
+      sale_multiple: product.sale_multiple,
     });
-    toast.success(`${product.name} agregado al pedido`);
+    toast.success(`${product.name} x${qty} agregado al pedido`);
   };
 
   return (

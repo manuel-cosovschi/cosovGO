@@ -2,9 +2,10 @@
 
 import { createServerClient } from '@/lib/supabase/server';
 import { orderSchema } from '@/lib/validations/order';
-import { sendOrderConfirmation, sendNewOrderNotification, sendOrderStatusUpdate } from '@/lib/emails';
+import { sendNewOrderNotification, sendOrderStatusUpdate } from '@/lib/emails';
 import { appendOrderToSheets } from '@/lib/google-sheets';
 import { getProductUnitCosts, getPackageUnitCosts } from '@/lib/production-cost';
+import { quantityError } from '@/lib/utils';
 import { revalidatePath } from 'next/cache';
 import type { CreateOrderInput, Order, OrderDetail, OrderFilters, OrderStatus, OrderItem } from '@/types';
 import { VALID_TRANSITIONS, ORDER_STATUS_LABELS } from '@/types';
@@ -26,13 +27,20 @@ export async function createOrder(input: CreateOrderInput): Promise<{
   const productIds = data.items.filter((i) => i.product_id).map((i) => i.product_id!);
   const packageIds = data.items.filter((i) => i.package_id).map((i) => i.package_id!);
 
-  let productsData: { id: string; name: string; price: number }[] = [];
+  let productsData: {
+    id: string;
+    name: string;
+    price: number;
+    min_quantity: number;
+    sale_multiple: number;
+    sale_unit: string;
+  }[] = [];
   let packagesData: { id: string; name: string; price: number }[] = [];
 
   if (productIds.length > 0) {
     const { data: products } = await supabase
       .from('products')
-      .select('id, name, price')
+      .select('id, name, price, min_quantity, sale_multiple, sale_unit')
       .in('id', productIds);
     productsData = products || [];
   }
@@ -48,6 +56,18 @@ export async function createOrder(input: CreateOrderInput): Promise<{
   // Validate delivery address
   if (data.delivery_method === 'delivery' && !data.address) {
     return { success: false, error: 'La dirección es obligatoria para envíos a domicilio.' };
+  }
+
+  // Validate quantities (mínimo + venta por múltiplo) para productos
+  const productById = new Map(productsData.map((p) => [p.id, p]));
+  for (const item of data.items) {
+    if (!item.product_id) continue;
+    const prod = productById.get(item.product_id);
+    if (!prod) continue;
+    const err = quantityError(item.quantity, prod.min_quantity, prod.sale_multiple, prod.sale_unit);
+    if (err) {
+      return { success: false, error: `${prod.name}: ${err}` };
+    }
   }
 
   // Build price map
@@ -129,10 +149,9 @@ export async function createOrder(input: CreateOrderInput): Promise<{
     notes: 'Pedido creado',
   });
 
-  // Send emails (non-blocking) — separate catches to debug each side independently.
-  sendOrderConfirmation(data.email, order as Order, orderItems as OrderItem[]).catch(
-    (err) => console.error('[email] confirmación al cliente falló:', err)
-  );
+  // Emails (non-blocking). Al cliente NO se le manda nada todavía: solo recibe
+  // un mail cuando Valen aprueba el pedido (ver updateOrderStatus). Acá solo se
+  // notifica a Valen del nuevo pedido para que lo revise.
   sendNewOrderNotification(order as Order, orderItems as OrderItem[]).catch(
     (err) => console.error('[email] notif admin (Valen) falló:', err)
   );
@@ -264,17 +283,137 @@ export async function updateOrderStatus(
     notes: notes || null,
   });
 
-  sendOrderStatusUpdate(order.email, {
-    contactName: order.contact_name,
-    orderNumber: order.order_number,
-    newStatus,
-    notes: notes || undefined,
-  }).catch(console.error);
+  // El cliente solo recibe mail en las decisiones (aprobado / rechazado).
+  // En producción, listo, enviado, etc. NO se le manda nada para no saturarlo.
+  if (newStatus === 'approved' || newStatus === 'rejected') {
+    sendOrderStatusUpdate(order.email, {
+      contactName: order.contact_name,
+      orderNumber: order.order_number,
+      newStatus,
+      notes: notes || undefined,
+    }).catch(console.error);
+  }
 
   revalidatePath('/admin/pedidos');
   revalidatePath(`/admin/pedidos/${orderId}`);
   revalidatePath('/admin');
 
+  return { success: true };
+}
+
+const EDITABLE_STATUSES: OrderStatus[] = ['received', 'pending_review'];
+
+export async function updateOrderItems(
+  orderId: string,
+  items: { product_id?: string | null; package_id?: string | null; quantity: number }[]
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createServerClient();
+
+  const { data: order } = await supabase
+    .from('orders')
+    .select('id, status')
+    .eq('id', orderId)
+    .single();
+
+  if (!order) return { success: false, error: 'Pedido no encontrado.' };
+
+  if (!EDITABLE_STATUSES.includes(order.status as OrderStatus)) {
+    return {
+      success: false,
+      error: 'Solo se pueden editar los productos antes de aprobar el pedido.',
+    };
+  }
+
+  const cleanItems = items.filter((i) => (i.product_id || i.package_id) && i.quantity > 0);
+  if (cleanItems.length === 0) {
+    return { success: false, error: 'El pedido debe tener al menos un producto.' };
+  }
+
+  const productIds = cleanItems.filter((i) => i.product_id).map((i) => i.product_id!);
+  const packageIds = cleanItems.filter((i) => i.package_id).map((i) => i.package_id!);
+
+  const [{ data: products }, { data: packages }] = await Promise.all([
+    productIds.length
+      ? supabase
+          .from('products')
+          .select('id, name, price, min_quantity, sale_multiple, sale_unit')
+          .in('id', productIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    packageIds.length
+      ? supabase.from('packages').select('id, name, price').in('id', packageIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+  ]);
+
+  const productById = new Map((products || []).map((p) => [p.id as string, p]));
+  const packageById = new Map((packages || []).map((p) => [p.id as string, p]));
+
+  // Validar cantidades (mínimo + múltiplo) de productos
+  for (const item of cleanItems) {
+    if (!item.product_id) continue;
+    const prod = productById.get(item.product_id) as
+      | { name: string; min_quantity: number; sale_multiple: number; sale_unit: string }
+      | undefined;
+    if (!prod) return { success: false, error: 'Producto no encontrado.' };
+    const err = quantityError(item.quantity, prod.min_quantity, prod.sale_multiple, prod.sale_unit);
+    if (err) return { success: false, error: `${prod.name}: ${err}` };
+  }
+
+  const [productCosts, packageCosts] = await Promise.all([
+    getProductUnitCosts(productIds),
+    getPackageUnitCosts(packageIds),
+  ]);
+
+  const newItems = cleanItems.map((item) => {
+    const info = item.product_id
+      ? (productById.get(item.product_id) as { name: string; price: number } | undefined)
+      : (packageById.get(item.package_id!) as { name: string; price: number } | undefined);
+    if (!info) throw new Error('Item no encontrado');
+    const unitCost = item.product_id
+      ? productCosts.get(item.product_id) ?? 0
+      : packageCosts.get(item.package_id!) ?? 0;
+    const costSubtotal = Math.round(unitCost * item.quantity * 100) / 100;
+    return {
+      order_id: orderId,
+      product_id: item.product_id || null,
+      package_id: item.package_id || null,
+      item_name: info.name,
+      unit_price: info.price,
+      quantity: item.quantity,
+      subtotal: info.price * item.quantity,
+      unit_cost: unitCost > 0 ? Math.round(unitCost * 100) / 100 : null,
+      cost_subtotal: costSubtotal > 0 ? costSubtotal : null,
+      notes: null,
+    };
+  });
+
+  const subtotal = newItems.reduce((sum, i) => sum + i.subtotal, 0);
+  const productionCost = newItems.reduce((sum, i) => sum + (i.cost_subtotal ?? 0), 0);
+
+  // Reemplazar items
+  await supabase.from('order_items').delete().eq('order_id', orderId);
+  const { error: insertError } = await supabase.from('order_items').insert(newItems);
+  if (insertError) return { success: false, error: 'Error al guardar los productos.' };
+
+  await supabase
+    .from('orders')
+    .update({
+      subtotal,
+      production_cost: productionCost > 0 ? productionCost : null,
+    })
+    .eq('id', orderId);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  await supabase.from('order_status_history').insert({
+    order_id: orderId,
+    from_status: order.status as OrderStatus,
+    to_status: order.status as OrderStatus,
+    changed_by: user?.id || null,
+    notes: 'Productos del pedido editados',
+  });
+
+  revalidatePath('/admin/pedidos');
+  revalidatePath(`/admin/pedidos/${orderId}`);
+  revalidatePath('/admin');
   return { success: true };
 }
 

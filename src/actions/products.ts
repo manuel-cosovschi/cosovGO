@@ -3,8 +3,11 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { productSchema } from '@/lib/validations/product';
 import { slugify } from '@/lib/utils';
+import { getProductUnitCosts } from '@/lib/production-cost';
 import { revalidatePath } from 'next/cache';
 import type { Product, CreateProductInput, UpdateProductInput, ProductFilters } from '@/types';
+
+export type ProductWithCost = Product & { unit_cost: number };
 
 export async function listAllProducts(filters?: ProductFilters): Promise<Product[]> {
   const supabase = await createServerClient();
@@ -19,6 +22,68 @@ export async function listAllProducts(filters?: ProductFilters): Promise<Product
 
   const { data } = await query;
   return (data as Product[]) || [];
+}
+
+/** Lista de productos con el costo unitario de producción calculado. */
+export async function listProductsWithCost(filters?: ProductFilters): Promise<ProductWithCost[]> {
+  const products = await listAllProducts(filters);
+  const costs = await getProductUnitCosts(products.map((p) => p.id));
+  return products.map((p) => ({
+    ...p,
+    unit_cost: Math.round((costs.get(p.id) || 0) * 100) / 100,
+  }));
+}
+
+/**
+ * Recalcula el costo unitario de los productos indicados (o todos si no se pasa
+ * ninguno) y, si cambió respecto del último snapshot, guarda el valor anterior
+ * y la fecha. Sirve para mostrar cuánto subió el costo (y cuándo) cada vez que
+ * se actualiza el precio de la materia prima.
+ */
+export async function snapshotProductCosts(productIds?: string[]): Promise<void> {
+  const supabase = await createServerClient();
+
+  let ids = productIds;
+  if (!ids || ids.length === 0) {
+    const { data } = await supabase.from('products').select('id');
+    ids = (data || []).map((p) => p.id);
+  }
+  if (ids.length === 0) return;
+
+  const costs = await getProductUnitCosts(ids);
+
+  const { data: current } = await supabase
+    .from('products')
+    .select('id, cost_snapshot, cost_snapshot_at')
+    .in('id', ids);
+
+  const snapById = new Map(
+    (current || []).map((p) => [p.id, { cost: p.cost_snapshot, at: p.cost_snapshot_at }])
+  );
+  const now = new Date().toISOString();
+
+  for (const id of ids) {
+    const newCost = Math.round((costs.get(id) || 0) * 100) / 100;
+    if (newCost <= 0) continue; // sin costo cargado, no registramos nada
+
+    const prev = snapById.get(id);
+    const prevCost = prev?.cost != null ? Number(prev.cost) : null;
+
+    // Sin cambios reales → no tocamos el historial
+    if (prevCost != null && Math.abs(prevCost - newCost) < 0.005) continue;
+
+    await supabase
+      .from('products')
+      .update({
+        cost_prev: prevCost,
+        cost_prev_at: prevCost != null ? prev?.at ?? null : null,
+        cost_snapshot: newCost,
+        cost_snapshot_at: now,
+      })
+      .eq('id', id);
+  }
+
+  revalidatePath('/admin/productos');
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
@@ -57,6 +122,8 @@ export async function createProduct(input: CreateProductInput): Promise<{
     return { success: false, error: 'Error al crear el producto.' };
   }
 
+  await snapshotProductCosts([data.id]);
+
   revalidatePath('/admin/productos');
   revalidatePath('/catalogo');
   return { success: true, product: data as Product };
@@ -83,6 +150,11 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
 
   if (error) {
     return { success: false, error: 'Error al actualizar el producto.' };
+  }
+
+  // Si tocó el costo (override), registramos la variación de costo.
+  if ('cost_override' in input) {
+    await snapshotProductCosts([id]);
   }
 
   revalidatePath('/admin/productos');

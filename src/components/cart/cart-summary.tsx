@@ -3,7 +3,7 @@
 import { Minus, Plus, Trash2 } from 'lucide-react';
 import { useCart } from './cart-provider';
 import { Button } from '@/components/ui/button';
-import { formatPrice } from '@/lib/utils';
+import { formatPrice, quantityStep, minValidQuantity } from '@/lib/utils';
 
 export function CartSummary() {
   const { items, updateQuantity, removeItem, subtotal } = useCart();
@@ -25,12 +25,18 @@ export function CartSummary() {
       <h2 className="text-lg font-semibold text-stone-900">Tu pedido</h2>
 
       <div className="divide-y divide-stone-200">
-        {items.map((item) => (
+        {items.map((item) => {
+          const step = quantityStep(item.sale_multiple);
+          const minQ = minValidQuantity(item.min_quantity, item.sale_multiple);
+          return (
           <div key={item.id} className="flex items-center gap-4 py-4">
             <div className="flex-1 min-w-0">
               <p className="font-medium text-stone-900 truncate">{item.name}</p>
               <p className="text-sm text-stone-500">
                 {formatPrice(item.price)} / {item.sale_unit}
+                {step > 1 && (
+                  <span className="ml-1 text-stone-400">· de a {step}</span>
+                )}
               </p>
             </div>
 
@@ -39,8 +45,8 @@ export function CartSummary() {
                 size="icon"
                 variant="outline"
                 className="h-8 w-8"
-                onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                disabled={item.quantity <= 1}
+                onClick={() => updateQuantity(item.id, item.quantity - step)}
+                disabled={item.quantity <= minQ}
               >
                 <Minus className="h-3 w-3" />
               </Button>
@@ -49,7 +55,7 @@ export function CartSummary() {
                 size="icon"
                 variant="outline"
                 className="h-8 w-8"
-                onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                onClick={() => updateQuantity(item.id, item.quantity + step)}
               >
                 <Plus className="h-3 w-3" />
               </Button>
@@ -68,7 +74,8 @@ export function CartSummary() {
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="flex items-center justify-between border-t border-stone-200 pt-4">

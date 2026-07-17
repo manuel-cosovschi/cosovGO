@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import type { CartItem } from '@/types';
+import { normalizeQuantity } from '@/lib/utils';
 
 interface CartContextType {
   items: CartItem[];
@@ -69,7 +70,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const updateQuantity = useCallback((id: string, quantity: number) => {
     if (quantity < 1) return;
     setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, quantity } : i))
+      prev.map((i) =>
+        i.id === id
+          ? { ...i, quantity: normalizeQuantity(quantity, i.min_quantity, i.sale_multiple) }
+          : i
+      )
     );
   }, []);
 

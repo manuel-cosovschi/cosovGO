@@ -1,8 +1,10 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getOrder } from '@/actions/orders';
+import { listAllProducts } from '@/actions/products';
 import { OrderStatusBadge } from '@/components/admin/orders/order-status-badge';
 import { OrderStatusActions } from '@/components/admin/orders/order-status-actions';
+import { OrderItemsEditor, type EditableProduct } from '@/components/admin/orders/order-items-editor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDate, formatDateTime, formatPrice } from '@/lib/utils';
 import { DELIVERY_METHOD_LABELS } from '@/types';
@@ -15,11 +17,24 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
+const EDITABLE_STATUSES: OrderStatus[] = ['received', 'pending_review'];
+
 export default async function OrderDetailPage({ params }: Props) {
   const { id } = await params;
   const order = await getOrder(id);
 
   if (!order) notFound();
+
+  const canEdit = EDITABLE_STATUSES.includes(order.status as OrderStatus);
+  const products = canEdit ? await listAllProducts({ is_active: true }) : [];
+  const editableProducts: EditableProduct[] = products.map((p) => ({
+    id: p.id,
+    name: p.name,
+    price: p.price,
+    min_quantity: p.min_quantity,
+    sale_multiple: p.sale_multiple ?? 1,
+    sale_unit: p.sale_unit,
+  }));
 
   return (
     <div className="space-y-6">
@@ -129,10 +144,19 @@ export default async function OrderDetailPage({ params }: Props) {
 
       {/* Order items */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Productos</CardTitle>
         </CardHeader>
         <CardContent>
+          {canEdit && (
+            <div className="mb-4">
+              <OrderItemsEditor
+                orderId={order.id}
+                items={order.items}
+                products={editableProducts}
+              />
+            </div>
+          )}
           <div className="divide-y divide-stone-200">
             {order.items.map((item) => (
               <div key={item.id} className="flex items-center justify-between py-3">
