@@ -18,6 +18,8 @@
 3. Copiar TODO el contenido del archivo `supabase/migrations/001_initial_schema.sql`
 4. Click "Run" (o Ctrl+Enter)
 5. Repetir con `supabase/migrations/002_storage_bucket.sql`
+6. Repetir con `supabase/migrations/008_storage_upload_fix.sql`
+   (deja el bucket de imágenes bien configurado — ver "Subida de imágenes" más abajo)
 
 ### Paso 3: Obtener las keys de Supabase (1 min)
 
@@ -110,6 +112,31 @@ se mantienen parecidos).
 
 Si algún envío falla, queda logueado en Vercel con el prefijo
 `[email]` para debug.
+
+## Subida de imágenes de productos
+
+Las fotos van **directo del navegador a Supabase Storage**, con un permiso
+temporal (signed upload URL) que emite el server. No pasan por Next.
+
+Es a propósito: las Server Actions de Next cortan el body en 1MB y Vercel
+corta cualquier request en 4.5MB, así que mandar la foto por el server hacía
+fallar cualquier imagen sacada con el celular (pesan 3-12MB) con un
+"Error al subir la imagen" sin explicación.
+
+Antes de subirla, el navegador la redimensiona a 1600px de lado máximo y la
+recomprime a WebP (o JPEG si el navegador no exporta WebP), apuntando a ~900KB.
+Valentina puede subir la foto tal cual sale del celular: se achica sola.
+
+**Si falla la subida**, revisar en Supabase > Storage > `product-images`:
+
+- El bucket tiene que existir y estar marcado como **público**.
+- **File size limit**: 8MB.
+- **Allowed MIME types**: `image/jpeg`, `image/png`, `image/webp`.
+
+Correr `supabase/migrations/008_storage_upload_fix.sql` deja las tres cosas
+como corresponde (se puede correr las veces que haga falta).
+
+Los errores del storage quedan logueados en Vercel con el prefijo `[storage]`.
 
 ## Dominio personalizado (opcional)
 
