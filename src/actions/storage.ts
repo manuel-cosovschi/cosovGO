@@ -2,171 +2,176 @@
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerClient } from '@/lib/supabase/server';
-import { revalidatePath } from 'next/cache';
+import { ACCEPTED_IMAGE_TYPES, MAX_IMAGE_SIZE } from '@/lib/constants';
 
 const BUCKET = 'product-images';
 
-/**
- * Sube una imagen al storage de Supabase usando el service role (sin RLS).
- * Recibe un FormData con un campo "file".
- */
-export async function uploadImage(formData: FormData): Promise<{
-  success: boolean;
-  url?: string;
-  error?: string;
-}> {
-  const file = formData.get('file') as File | null;
-  if (!file) {
-    return { success: false, error: 'No se recibió ningún archivo.' };
+/** Extensión derivada del MIME real, nunca del nombre que trae el archivo. */
+const EXT_BY_TYPE: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+
+type Result<T> = ({ success: true } & T) | { success: false; error: string };
+
+function randomObjectName(contentType: string): string {
+  const ext = EXT_BY_TYPE[contentType] ?? 'jpg';
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+}
+
+/** Traduce los errores de Supabase Storage a algo accionable para Valentina. */
+function describeStorageError(error: { message?: string }): string {
+  const message = error.message?.toLowerCase() ?? '';
+
+  if (message.includes('bucket not found')) {
+    return `No existe el bucket "${BUCKET}" en Supabase Storage. Crealo desde Storage > New Bucket (público).`;
+  }
+  if (message.includes('mime') || message.includes('content type')) {
+    return 'El bucket de Supabase no acepta este formato de imagen. Revisá "Allowed MIME types" en la configuración del bucket.';
+  }
+  if (message.includes('maximum allowed size') || message.includes('too large')) {
+    return 'La imagen supera el límite configurado en el bucket de Supabase. Subí el "File size limit" del bucket.';
+  }
+  if (message.includes('exceeded') || message.includes('quota')) {
+    return 'Se llenó el espacio de storage en Supabase. Borrá imágenes viejas o ampliá el plan.';
   }
 
-  // Validar tipo
-  const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
-  if (!validTypes.includes(file.type)) {
-    return { success: false, error: 'Formato no soportado. Usá JPG, PNG o WebP.' };
-  }
+  return 'Error al preparar la subida de la imagen. Probá de nuevo en unos segundos.';
+}
 
-  // Validar tamaño (5MB)
-  if (file.size > 5 * 1024 * 1024) {
-    return { success: false, error: 'La imagen no puede superar los 5MB.' };
-  }
-
-  // Verificar autenticación
+async function requireAdmin(): Promise<boolean> {
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return !!user;
+}
+
+function validateImage(contentType: string, size: number): string | null {
+  if (!ACCEPTED_IMAGE_TYPES.includes(contentType)) {
+    return 'Formato no soportado. Usá JPG, PNG o WebP.';
+  }
+  if (size <= 0) {
+    return 'El archivo está vacío.';
+  }
+  if (size > MAX_IMAGE_SIZE) {
+    return `La imagen no puede superar los ${Math.round(MAX_IMAGE_SIZE / (1024 * 1024))}MB.`;
+  }
+  return null;
+}
+
+/**
+ * Devuelve un permiso de subida temporal para que el navegador mande la imagen
+ * derecho a Supabase Storage.
+ *
+ * Este es el camino principal: los bytes NO pasan por el server de Next. Las
+ * Server Actions tienen un límite de body de 1MB por defecto y Vercel corta los
+ * requests en 4.5MB, así que mandar la foto por acá hacía fallar cualquier
+ * imagen de celular con un error genérico.
+ */
+export async function createImageUploadTicket(input: {
+  contentType: string;
+  size: number;
+}): Promise<Result<{ path: string; token: string; publicUrl: string }>> {
+  if (!(await requireAdmin())) {
     return { success: false, error: 'No tenés permiso para subir imágenes.' };
   }
 
-  // Subir con service role (bypass RLS en storage)
+  const invalid = validateImage(input.contentType, input.size);
+  if (invalid) return { success: false, error: invalid };
+
   const admin = createAdminClient();
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const path = randomObjectName(input.contentType);
 
-  const { error } = await admin.storage
+  const { data, error } = await admin.storage
     .from(BUCKET)
-    .upload(fileName, file, {
-      cacheControl: '3600',
-      upsert: false,
-    });
+    .createSignedUploadUrl(path);
 
-  if (error) {
-    console.error('Storage upload error:', error);
-    return { success: false, error: 'Error al subir la imagen. Verificá que el bucket "product-images" exista.' };
+  if (error || !data) {
+    console.error('[storage] createSignedUploadUrl falló:', error);
+    return { success: false, error: describeStorageError(error ?? {}) };
   }
 
-  const { data: urlData } = admin.storage.from(BUCKET).getPublicUrl(fileName);
+  const { data: urlData } = admin.storage.from(BUCKET).getPublicUrl(data.path);
 
+  return {
+    success: true,
+    path: data.path,
+    token: data.token,
+    publicUrl: urlData.publicUrl,
+  };
+}
+
+/**
+ * Subida a través del server, como respaldo por si el navegador no puede
+ * hablar directo con Supabase (red corporativa, extensión que bloquea, etc).
+ *
+ * Sólo sirve para archivos chicos: el body de una Server Action está limitado
+ * (ver `serverActions.bodySizeLimit` en next.config.ts).
+ */
+export async function uploadImage(formData: FormData): Promise<
+  Result<{ url: string }>
+> {
+  const file = formData.get('file');
+  if (!(file instanceof File)) {
+    return { success: false, error: 'No se recibió ningún archivo.' };
+  }
+
+  if (!(await requireAdmin())) {
+    return { success: false, error: 'No tenés permiso para subir imágenes.' };
+  }
+
+  const invalid = validateImage(file.type, file.size);
+  if (invalid) return { success: false, error: invalid };
+
+  const admin = createAdminClient();
+  const path = randomObjectName(file.type);
+
+  const { error } = await admin.storage.from(BUCKET).upload(path, file, {
+    cacheControl: '3600',
+    contentType: file.type,
+    upsert: false,
+  });
+
+  if (error) {
+    console.error('[storage] upload falló:', error);
+    return { success: false, error: describeStorageError(error) };
+  }
+
+  const { data: urlData } = admin.storage.from(BUCKET).getPublicUrl(path);
   return { success: true, url: urlData.publicUrl };
 }
 
 /**
- * Elimina una imagen del storage.
+ * Elimina una imagen del storage. Si la URL no apunta a nuestro bucket
+ * (por ejemplo una URL externa cargada a mano) no hace nada y no falla.
  */
-export async function deleteImage(imageUrl: string): Promise<{
-  success: boolean;
-  error?: string;
-}> {
-  const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+export async function deleteImage(imageUrl: string): Promise<
+  { success: boolean; error?: string }
+> {
+  if (!(await requireAdmin())) {
     return { success: false, error: 'No tenés permiso.' };
   }
 
-  // Extraer el path del archivo desde la URL
-  const urlParts = imageUrl.split(`/storage/v1/object/public/${BUCKET}/`);
-  if (urlParts.length < 2) {
-    return { success: false, error: 'URL de imagen inválida.' };
+  const marker = `/storage/v1/object/public/${BUCKET}/`;
+  const index = imageUrl.indexOf(marker);
+  if (index === -1) {
+    return { success: true };
   }
-  const filePath = urlParts[1];
+
+  const filePath = decodeURIComponent(
+    imageUrl.slice(index + marker.length).split('?')[0]
+  );
+  if (!filePath) return { success: true };
 
   const admin = createAdminClient();
   const { error } = await admin.storage.from(BUCKET).remove([filePath]);
 
   if (error) {
-    console.error('Storage delete error:', error);
+    console.error('[storage] delete falló:', error);
     return { success: false, error: 'Error al eliminar la imagen.' };
   }
-
-  return { success: true };
-}
-
-/**
- * Sube una imagen y actualiza el campo image_url de un producto.
- * Todo en una sola acción para Valentina.
- */
-export async function uploadProductImage(productId: string, formData: FormData): Promise<{
-  success: boolean;
-  url?: string;
-  error?: string;
-}> {
-  // Subir imagen
-  const uploadResult = await uploadImage(formData);
-  if (!uploadResult.success) return uploadResult;
-
-  // Actualizar producto
-  const admin = createAdminClient();
-
-  // Obtener imagen anterior para borrarla
-  const { data: product } = await admin
-    .from('products')
-    .select('image_url')
-    .eq('id', productId)
-    .single();
-
-  // Actualizar con la nueva URL
-  const { error } = await admin
-    .from('products')
-    .update({ image_url: uploadResult.url })
-    .eq('id', productId);
-
-  if (error) {
-    return { success: false, error: 'Error al actualizar el producto.' };
-  }
-
-  // Borrar imagen anterior si existía
-  if (product?.image_url) {
-    await deleteImage(product.image_url).catch(() => {});
-  }
-
-  revalidatePath('/admin/productos');
-  revalidatePath(`/admin/productos/${productId}`);
-  revalidatePath('/catalogo');
-
-  return { success: true, url: uploadResult.url };
-}
-
-/**
- * Quita la imagen de un producto (la borra del storage y limpia el campo).
- */
-export async function removeProductImage(productId: string): Promise<{
-  success: boolean;
-  error?: string;
-}> {
-  const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: 'No tenés permiso.' };
-
-  const admin = createAdminClient();
-
-  const { data: product } = await admin
-    .from('products')
-    .select('image_url')
-    .eq('id', productId)
-    .single();
-
-  if (product?.image_url) {
-    await deleteImage(product.image_url).catch(() => {});
-  }
-
-  await admin
-    .from('products')
-    .update({ image_url: null })
-    .eq('id', productId);
-
-  revalidatePath('/admin/productos');
-  revalidatePath(`/admin/productos/${productId}`);
-  revalidatePath('/catalogo');
 
   return { success: true };
 }
