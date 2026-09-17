@@ -16,7 +16,7 @@ export function StatsCards({ stats }: StatsCardsProps) {
       color: 'text-blue-600',
     },
     {
-      title: 'Pendientes de revisión',
+      title: 'Sin revisar',
       value: String(stats.pending_review),
       icon: Clock,
       color: 'text-yellow-600',

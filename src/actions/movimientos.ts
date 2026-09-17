@@ -2,6 +2,7 @@
 
 import { createServerClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { CONFIRMED_ORDER_STATUSES } from '@/types';
 import type { CreateGastoInput, Gasto, OrderWithItems } from '@/types';
 
 function monthRange(year: number, month: number) {
@@ -21,13 +22,11 @@ export async function getOrdersForMonth(
   const { from, to } = monthRange(year, month);
 
   // Solo pedidos que Valen aprobó (aprobado en adelante). Quedan afuera los
-  // que todavía no revisó (recibido, pendiente), los rechazados y cancelados.
-  const APROBADOS = ['approved', 'active', 'in_production', 'ready', 'shipped', 'delivered'];
-
+  // que todavía no revisó (recibido) y los cancelados.
   const { data: orders, error } = await supabase
     .from('orders')
     .select('*')
-    .in('status', APROBADOS)
+    .in('status', CONFIRMED_ORDER_STATUSES)
     .gte('delivery_date', from)
     .lte('delivery_date', to)
     .order('delivery_date', { ascending: true })

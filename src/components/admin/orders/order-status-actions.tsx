@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { VALID_TRANSITIONS, ORDER_STATUS_LABELS, type OrderStatus } from '@/types';
+import { OrderStatusSelect } from './order-status-select';
+import { ORDER_STATUS_LABELS, type OrderStatus } from '@/types';
 import { updateOrderStatus, updateCostoEnvio } from '@/actions/orders';
 import { toast } from 'sonner';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface OrderStatusActionsProps {
@@ -23,23 +24,21 @@ export function OrderStatusActions({
   currentCostoEnvio,
   onStatusChange,
 }: OrderStatusActionsProps) {
-  const [loading, setLoading] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [showApproveForm, setShowApproveForm] = useState(false);
   const [costoEnvio, setCostoEnvio] = useState(
     currentCostoEnvio != null ? String(currentCostoEnvio) : ''
   );
   const router = useRouter();
-  const transitions = VALID_TRANSITIONS[currentStatus];
 
-  if (transitions.length === 0) return null;
+  const sinAprobar = currentStatus === 'received';
 
   const handleApprove = async () => {
-    setLoading('approved');
+    setLoading(true);
     try {
       const costoNum = costoEnvio.trim() !== '' ? parseFloat(costoEnvio) : null;
       if (costoNum !== null && (isNaN(costoNum) || costoNum < 0)) {
         toast.error('El costo de envío debe ser un número positivo.');
-        setLoading(null);
         return;
       }
       await updateCostoEnvio(orderId, costoNum);
@@ -56,60 +55,46 @@ export function OrderStatusActions({
     } catch {
       toast.error('Error al aprobar');
     } finally {
-      setLoading(null);
+      setLoading(false);
     }
-  };
-
-  const handleStatusChange = async (newStatus: OrderStatus) => {
-    if (newStatus === 'approved') {
-      setShowApproveForm(true);
-      return;
-    }
-    setLoading(newStatus);
-    try {
-      const result = await updateOrderStatus(orderId, newStatus);
-      if (result.success) {
-        toast.success(`Estado actualizado a "${ORDER_STATUS_LABELS[newStatus]}"`);
-        onStatusChange?.();
-        router.refresh();
-      } else {
-        toast.error(result.error || 'Error al cambiar estado');
-      }
-    } catch {
-      toast.error('Error al cambiar estado');
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const getVariant = (status: OrderStatus) => {
-    if (status === 'approved' || status === 'delivered') return 'default' as const;
-    if (status === 'rejected' || status === 'cancelled') return 'destructive' as const;
-    return 'outline' as const;
   };
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {transitions.map((status) => (
-          <Button
-            key={status}
-            variant={getVariant(status)}
-            size="sm"
-            disabled={loading !== null}
-            onClick={() => handleStatusChange(status)}
-          >
-            {loading === status && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-            {status === 'approved' ? 'Aprobar pedido' : ORDER_STATUS_LABELS[status]}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-stone-500">Estado:</span>
+          <OrderStatusSelect
+            orderId={orderId}
+            status={currentStatus}
+            onChanged={() => {
+              onStatusChange?.();
+              router.refresh();
+            }}
+          />
+        </div>
+
+        {/* Atajo para el caso más común, que además pide el costo de envío. */}
+        {sinAprobar && !showApproveForm && (
+          <Button size="sm" onClick={() => setShowApproveForm(true)}>
+            <Check className="mr-1 h-3.5 w-3.5" />
+            Aprobar pedido
           </Button>
-        ))}
+        )}
       </div>
 
-      {/* Approval form with optional shipping cost */}
+      <p className="text-xs text-stone-400">
+        Podés mover el pedido a cualquier estado, incluso volver atrás si te
+        equivocaste. El cliente solo recibe mail al aprobar y al cancelar.
+      </p>
+
+      {/* Aprobación con costo de envío opcional */}
       {showApproveForm && (
         <div className="rounded-md border border-stone-200 bg-stone-50 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-stone-800">Aprobar pedido</p>
+            <p className="text-sm font-medium text-stone-800">
+              Aprobar pedido — pasa a &quot;{ORDER_STATUS_LABELS.approved}&quot;
+            </p>
             <button
               onClick={() => setShowApproveForm(false)}
               className="text-stone-400 hover:text-stone-700"
@@ -142,12 +127,8 @@ export function OrderStatusActions({
             </p>
           </div>
 
-          <Button
-            size="sm"
-            disabled={loading !== null}
-            onClick={handleApprove}
-          >
-            {loading === 'approved' && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+          <Button size="sm" disabled={loading} onClick={handleApprove}>
+            {loading && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
             Confirmar aprobación
           </Button>
         </div>

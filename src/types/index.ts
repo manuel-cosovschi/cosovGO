@@ -1,14 +1,18 @@
 // === Enums y constantes ===
 
+/**
+ * Estados de un pedido, en el orden en que ocurren.
+ *
+ * Son a propósito pocos: antes había 10 y dos ("Pendiente de revisión" y
+ * "Activo") nunca se usaron en 174 pedidos. "Enviado" se fusionó con
+ * "Entregado" y "Rechazado" con "Cancelado", que para Valen significan
+ * lo mismo.
+ */
 export const ORDER_STATUSES = [
   'received',
-  'pending_review',
   'approved',
-  'rejected',
-  'active',
   'in_production',
   'ready',
-  'shipped',
   'delivered',
   'cancelled',
 ] as const;
@@ -17,42 +21,75 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   received: 'Recibido',
-  pending_review: 'Pendiente de revisión',
   approved: 'Aprobado',
-  rejected: 'Rechazado',
-  active: 'Activo',
   in_production: 'En producción',
-  ready: 'Listo para entrega',
-  shipped: 'Enviado',
+  ready: 'Listo',
   delivered: 'Entregado',
   cancelled: 'Cancelado',
 };
 
 export const ORDER_STATUS_COLORS: Record<OrderStatus, string> = {
   received: 'bg-blue-100 text-blue-800',
-  pending_review: 'bg-yellow-100 text-yellow-800',
   approved: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  active: 'bg-indigo-100 text-indigo-800',
   in_production: 'bg-orange-100 text-orange-800',
   ready: 'bg-emerald-100 text-emerald-800',
-  shipped: 'bg-purple-100 text-purple-800',
-  delivered: 'bg-gray-100 text-gray-800',
+  delivered: 'bg-stone-200 text-stone-700',
   cancelled: 'bg-red-100 text-red-800',
 };
 
-export const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  received: ['pending_review', 'approved', 'rejected', 'cancelled'],
-  pending_review: ['approved', 'rejected', 'cancelled'],
-  approved: ['active', 'cancelled'],
-  rejected: [],
-  active: ['in_production', 'cancelled'],
-  in_production: ['ready', 'cancelled'],
-  ready: ['shipped', 'cancelled'],
-  shipped: ['delivered', 'cancelled'],
-  delivered: [],
-  cancelled: [],
+/**
+ * Estados que ya no se pueden asignar pero siguen apareciendo en el historial
+ * de pedidos viejos. Solo se usan para mostrar una etiqueta legible.
+ */
+export const LEGACY_ORDER_STATUS_LABELS: Record<string, string> = {
+  pending_review: 'Pendiente de revisión',
+  active: 'Activo',
+  shipped: 'Enviado',
+  rejected: 'Rechazado',
 };
+
+/** Etiqueta de un estado, tolerante con los valores viejos del historial. */
+export function orderStatusLabel(status: string): string {
+  return (
+    ORDER_STATUS_LABELS[status as OrderStatus] ??
+    LEGACY_ORDER_STATUS_LABELS[status] ??
+    status
+  );
+}
+
+/**
+ * Pedidos cerrados: ya no se editan sus productos.
+ * En cualquier otro estado — aprobado incluido — Valen puede seguir tocándolos,
+ * porque a veces el cliente pide un cambio después de que ella aprobó.
+ */
+export const CLOSED_ORDER_STATUSES: OrderStatus[] = ['delivered', 'cancelled'];
+
+export function canEditOrderItems(status: string): boolean {
+  return !CLOSED_ORDER_STATUSES.includes(status as OrderStatus);
+}
+
+/**
+ * Estados que cuentan como venta confirmada (Movimientos, resumen, Sheets).
+ * Incluye los valores viejos por si algún pedido todavía no fue migrado.
+ */
+export const CONFIRMED_ORDER_STATUSES: string[] = [
+  'approved',
+  'in_production',
+  'ready',
+  'delivered',
+  // Legacy — equivalentes a los de arriba antes de la simplificación.
+  'active',
+  'shipped',
+];
+
+/**
+ * Valen puede mover un pedido a cualquier estado, también hacia atrás: es la
+ * única que los administra y necesita poder corregirse. El state machine
+ * rígido que había antes solo le bloqueaba el paso.
+ */
+export function isValidOrderStatus(status: string): status is OrderStatus {
+  return (ORDER_STATUSES as readonly string[]).includes(status);
+}
 
 export const DELIVERY_METHODS = ['pickup', 'delivery'] as const;
 export type DeliveryMethod = (typeof DELIVERY_METHODS)[number];

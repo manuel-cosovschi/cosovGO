@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { listOrders } from '@/actions/orders';
-import { OrderStatusBadge } from '@/components/admin/orders/order-status-badge';
+import { OrderStatusSelect } from '@/components/admin/orders/order-status-select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -105,7 +105,17 @@ export default function PedidosPage() {
                     <td className="px-4 py-3 text-stone-600">{formatDate(order.delivery_date)}</td>
                     <td className="px-4 py-3 font-medium text-stone-900">{formatPrice(order.subtotal)}</td>
                     <td className="px-4 py-3">
-                      <OrderStatusBadge status={order.status} />
+                      <OrderStatusSelect
+                        orderId={order.id}
+                        status={order.status}
+                        onChanged={(next) =>
+                          setOrders((prev) =>
+                            prev.map((o) =>
+                              o.id === order.id ? { ...o, status: next } : o
+                            )
+                          )
+                        }
+                      />
                     </td>
                     <td className="px-4 py-3 text-stone-500">{formatDate(order.created_at)}</td>
                   </tr>

@@ -8,7 +8,7 @@ import { getProductUnitCosts, getPackageUnitCosts } from '@/lib/production-cost'
 import { quantityError } from '@/lib/utils';
 import { revalidatePath } from 'next/cache';
 import type { CreateOrderInput, Order, OrderDetail, OrderFilters, OrderStatus, OrderItem } from '@/types';
-import { VALID_TRANSITIONS, ORDER_STATUS_LABELS } from '@/types';
+import { canEditOrderItems, isValidOrderStatus, orderStatusLabel } from '@/types';
 
 export async function createOrder(input: CreateOrderInput): Promise<{
   success: boolean;
@@ -257,16 +257,27 @@ export async function updateOrderStatus(
   if (!order) return { success: false, error: 'Pedido no encontrado.' };
 
   const currentStatus = order.status as OrderStatus;
-  const allowed = VALID_TRANSITIONS[currentStatus];
 
-  if (!allowed.includes(newStatus)) {
-    return {
-      success: false,
-      error: `No se puede cambiar de "${ORDER_STATUS_LABELS[currentStatus]}" a "${ORDER_STATUS_LABELS[newStatus]}".`,
-    };
+  if (!isValidOrderStatus(newStatus)) {
+    return { success: false, error: 'Estado desconocido.' };
   }
+  if (currentStatus === newStatus) return { success: true };
 
   const { data: { user } } = await supabase.auth.getUser();
+
+  // ¿Ya se le avisó alguna vez al cliente que el pedido fue aprobado? Si Valen
+  // mueve el estado para atrás y adelante (corrigiendo algo), no queremos
+  // mandarle el mismo mail dos veces.
+  let yaAvisado = false;
+  if (newStatus === 'approved') {
+    const { data: previas } = await supabase
+      .from('order_status_history')
+      .select('id')
+      .eq('order_id', orderId)
+      .eq('to_status', 'approved')
+      .limit(1);
+    yaAvisado = (previas?.length ?? 0) > 0;
+  }
 
   const { error } = await supabase
     .from('orders')
@@ -283,9 +294,13 @@ export async function updateOrderStatus(
     notes: notes || null,
   });
 
-  // El cliente solo recibe mail en las decisiones (aprobado / rechazado).
-  // En producción, listo, enviado, etc. NO se le manda nada para no saturarlo.
-  if (newStatus === 'approved' || newStatus === 'rejected') {
+  // El cliente solo recibe mail cuando el pedido se aprueba o se cancela.
+  // En producción, listo, etc. NO se le manda nada para no saturarlo. Y si el
+  // aviso de aprobación ya salió una vez, no se repite.
+  const avisar =
+    (newStatus === 'approved' && !yaAvisado) || newStatus === 'cancelled';
+
+  if (avisar) {
     sendOrderStatusUpdate(order.email, {
       contactName: order.contact_name,
       orderNumber: order.order_number,
@@ -301,8 +316,6 @@ export async function updateOrderStatus(
   return { success: true };
 }
 
-const EDITABLE_STATUSES: OrderStatus[] = ['received', 'pending_review'];
-
 export async function updateOrderItems(
   orderId: string,
   items: { product_id?: string | null; package_id?: string | null; quantity: number }[]
@@ -317,10 +330,10 @@ export async function updateOrderItems(
 
   if (!order) return { success: false, error: 'Pedido no encontrado.' };
 
-  if (!EDITABLE_STATUSES.includes(order.status as OrderStatus)) {
+  if (!canEditOrderItems(order.status)) {
     return {
       success: false,
-      error: 'Solo se pueden editar los productos antes de aprobar el pedido.',
+      error: `No se puede editar un pedido ${orderStatusLabel(order.status).toLowerCase()}.`,
     };
   }
 

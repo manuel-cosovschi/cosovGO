@@ -12,7 +12,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const [todayRes, weekRes, pendingRes, productionRes, readyRes, recentRes, valuation] = await Promise.all([
     supabase.from('orders').select('id', { count: 'exact', head: true }).gte('created_at', today),
     supabase.from('orders').select('id', { count: 'exact', head: true }).gte('created_at', weekAgo),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).in('status', ['received', 'pending_review']),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'received'),
     supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'in_production'),
     supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'ready'),
     supabase.from('orders').select('*').order('created_at', { ascending: false }).limit(5),

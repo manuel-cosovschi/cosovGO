@@ -7,7 +7,7 @@ import { OrderStatusActions } from '@/components/admin/orders/order-status-actio
 import { OrderItemsEditor, type EditableProduct } from '@/components/admin/orders/order-items-editor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDate, formatDateTime, formatPrice } from '@/lib/utils';
-import { DELIVERY_METHOD_LABELS } from '@/types';
+import { DELIVERY_METHOD_LABELS, canEditOrderItems, orderStatusLabel } from '@/types';
 import type { OrderStatus, DeliveryMethod } from '@/types';
 import { ArrowLeft } from 'lucide-react';
 import { SyncToSheetsButton } from '@/components/admin/orders/sync-to-sheets-button';
@@ -17,15 +17,13 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
-const EDITABLE_STATUSES: OrderStatus[] = ['received', 'pending_review'];
-
 export default async function OrderDetailPage({ params }: Props) {
   const { id } = await params;
   const order = await getOrder(id);
 
   if (!order) notFound();
 
-  const canEdit = EDITABLE_STATUSES.includes(order.status as OrderStatus);
+  const canEdit = canEditOrderItems(order.status);
   const products = canEdit ? await listAllProducts({ is_active: true }) : [];
   const editableProducts: EditableProduct[] = products.map((p) => ({
     id: p.id,
@@ -148,7 +146,7 @@ export default async function OrderDetailPage({ params }: Props) {
           <CardTitle className="text-base">Productos</CardTitle>
         </CardHeader>
         <CardContent>
-          {canEdit && (
+          {canEdit ? (
             <div className="mb-4">
               <OrderItemsEditor
                 orderId={order.id}
@@ -156,6 +154,12 @@ export default async function OrderDetailPage({ params }: Props) {
                 products={editableProducts}
               />
             </div>
+          ) : (
+            <p className="mb-4 rounded-md bg-stone-50 px-3 py-2 text-xs text-stone-500">
+              Este pedido está {orderStatusLabel(order.status).toLowerCase()}, así
+              que los productos ya no se editan. Si necesitás cambiar algo,
+              volvé el estado a &quot;En producción&quot; y editalo.
+            </p>
           )}
           <div className="divide-y divide-stone-200">
             {order.items.map((item) => (
