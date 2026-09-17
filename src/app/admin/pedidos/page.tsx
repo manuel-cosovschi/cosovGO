@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatDate, formatPrice } from '@/lib/utils';
 import { ORDER_STATUSES, ORDER_STATUS_LABELS, type Order, type OrderStatus } from '@/types';
-import { Search } from 'lucide-react';
+import { Search, Plus } from 'lucide-react';
 
 export default function PedidosPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -39,7 +39,15 @@ export default function PedidosPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-stone-900">Pedidos</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-stone-900">Pedidos</h1>
+        <Button asChild size="sm">
+          <Link href="/admin/pedidos/nuevo">
+            <Plus className="mr-1 h-4 w-4" />
+            Cargar pedido a mano
+          </Link>
+        </Button>
+      </div>
 
       {/* Filters */}
       <div className="flex flex-col gap-4 sm:flex-row">
@@ -101,6 +109,11 @@ export default function PedidosPage() {
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-stone-900">{order.contact_name || order.business_name}</p>
+                      {order.canal === 'minorista' && (
+                        <span className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                          Minorista
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-stone-600">{formatDate(order.delivery_date)}</td>
                     <td className="px-4 py-3 font-medium text-stone-900">{formatPrice(order.subtotal)}</td>

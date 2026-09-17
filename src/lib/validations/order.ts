@@ -52,3 +52,40 @@ export const orderSchema = z.object({
 );
 
 export type OrderFormValues = z.infer<typeof orderSchema>;
+
+/**
+ * Pedido cargado a mano por Valen desde el panel (los que le llegan por
+ * WhatsApp). Es más permisivo que el de la web:
+ *
+ * - El mail es opcional: un particular muchas veces no lo deja.
+ * - El negocio es opcional: un particular no tiene.
+ * - El precio de cada línea se puede pisar, porque a un minorista le cobra
+ *   distinto que a una cafetería.
+ * - La fecha puede ser pasada: a veces carga un pedido ya entregado.
+ */
+export const manualOrderItemSchema = z.object({
+  product_id: z.string().uuid(),
+  quantity: z.number().int().min(1, 'La cantidad debe ser al menos 1'),
+  unit_price: z.number().nonnegative('El precio no puede ser negativo'),
+});
+
+export const manualOrderSchema = z.object({
+  canal: z.enum(['minorista', 'mayorista']),
+  contact_name: z.string().min(1, 'El nombre del cliente es obligatorio'),
+  business_name: z.string().optional(),
+  phone: z.string().min(6, 'El teléfono es obligatorio'),
+  email: z.union([z.string().email('Email inválido'), z.literal('')]).optional(),
+  delivery_method: z.enum(['pickup', 'delivery']),
+  address: z.string().optional(),
+  delivery_date: z.string().min(1, 'La fecha de entrega es obligatoria'),
+  observations: z.string().optional(),
+  status: z.enum(['received', 'approved']),
+  items: z
+    .array(manualOrderItemSchema)
+    .min(1, 'El pedido debe tener al menos un producto'),
+}).refine(
+  (data) => data.delivery_method !== 'delivery' || !!data.address?.trim(),
+  { message: 'La dirección es obligatoria para envíos a domicilio', path: ['address'] }
+);
+
+export type ManualOrderValues = z.infer<typeof manualOrderSchema>;

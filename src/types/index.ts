@@ -171,10 +171,16 @@ export interface Order {
   id: string;
   order_number: number;
   status: OrderStatus;
-  business_name: string;
+  /** Puede venir vacío en pedidos de particulares cargados a mano. */
+  business_name: string | null;
   contact_name: string;
   phone: string;
-  email: string;
+  /** Opcional: un particular que pide por WhatsApp muchas veces no deja mail. */
+  email: string | null;
+  /** A quién le vendió. Los pedidos de la web son siempre mayoristas. */
+  canal: 'mayorista' | 'minorista';
+  /** true si lo cargó Valen desde el panel en vez de entrar solo por la web. */
+  carga_manual: boolean;
   delivery_method: DeliveryMethod;
   address: string | null;
   city: string | null;
