@@ -12,6 +12,18 @@ export const productSchema = z.object({
     .optional()
     .nullable()
     .transform((v) => (v == null || Number.isNaN(v) ? null : v)),
+  // === Canal minorista ===
+  // Sin precio minorista el producto no aparece en la tienda: así nadie compra
+  // por error a precio de cafetería.
+  price_minorista: z
+    .union([z.number().nonnegative('El precio no puede ser negativo'), z.nan()])
+    .optional()
+    .nullable()
+    .transform((v) => (v == null || Number.isNaN(v) ? null : v)),
+  visible_mayorista: z.boolean().default(true),
+  visible_minorista: z.boolean().default(true),
+  min_quantity_minorista: z.number().int().min(1).default(1),
+  sale_multiple_minorista: z.number().int().min(1).default(1),
   image_url: z.string().url().optional().nullable(),
   gallery_urls: z.array(z.string().url()).optional(),
   sale_unit: z.string().default('unidad'),

@@ -4,9 +4,9 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export default async function ProductDetailPage({ params }: Props) {
+export default async function TiendaProductPage({ params }: Props) {
   const { slug } = await params;
   return (
-    <ProductDetailView slug={slug} canal="mayorista" backLabel="Volver al catálogo" />
+    <ProductDetailView slug={slug} canal="minorista" backLabel="Volver a la tienda" />
   );
 }

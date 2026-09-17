@@ -47,6 +47,11 @@ export function ProductForm({ product, categories }: ProductFormProps) {
           sale_unit: product.sale_unit,
           min_quantity: product.min_quantity,
           sale_multiple: product.sale_multiple ?? 1,
+          price_minorista: product.price_minorista,
+          visible_mayorista: product.visible_mayorista ?? true,
+          visible_minorista: product.visible_minorista ?? true,
+          min_quantity_minorista: product.min_quantity_minorista ?? 1,
+          sale_multiple_minorista: product.sale_multiple_minorista ?? 1,
           min_advance_hours: product.min_advance_hours,
           is_active: product.is_active,
         }
@@ -54,6 +59,10 @@ export function ProductForm({ product, categories }: ProductFormProps) {
           sale_unit: 'unidad',
           min_quantity: 1,
           sale_multiple: 1,
+          visible_mayorista: true,
+          visible_minorista: true,
+          min_quantity_minorista: 1,
+          sale_multiple_minorista: 1,
           is_active: true,
         },
   });
@@ -169,6 +178,79 @@ export function ProductForm({ product, categories }: ProductFormProps) {
           {errors.sale_multiple && (
             <p className="text-sm text-red-600">{errors.sale_multiple.message}</p>
           )}
+        </div>
+
+        {/* Canal minorista */}
+        <div className="sm:col-span-2 rounded-lg border border-stone-200 bg-stone-50 p-4 space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-stone-900">
+              Venta a particulares
+            </h3>
+            <p className="text-xs text-stone-500">
+              La tienda para particulares está en <code>/tienda</code>. Los
+              precios de arriba son los de cafeterías.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="price_minorista">Precio para particulares</Label>
+              <Input
+                id="price_minorista"
+                type="number"
+                step="0.01"
+                placeholder="Ej: 1500"
+                {...register('price_minorista', { valueAsNumber: true })}
+              />
+              <p className="text-xs text-stone-400">
+                Si lo dejás vacío, este producto no aparece en la tienda.
+              </p>
+              {errors.price_minorista && (
+                <p className="text-sm text-red-600">
+                  {errors.price_minorista.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="min_quantity_minorista">
+                Mínimo para particulares
+              </Label>
+              <Input
+                id="min_quantity_minorista"
+                type="number"
+                min={1}
+                {...register('min_quantity_minorista', { valueAsNumber: true })}
+              />
+              <p className="text-xs text-stone-400">
+                Un particular suele comprar de a 1. Subilo solo si hace falta.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-stone-600">
+              Mostrar este producto en:
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm text-stone-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-stone-300"
+                  {...register('visible_mayorista')}
+                />
+                Catálogo de cafeterías
+              </label>
+              <label className="flex items-center gap-2 text-sm text-stone-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-stone-300"
+                  {...register('visible_minorista')}
+                />
+                Tienda de particulares
+              </label>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-2 sm:col-span-2">

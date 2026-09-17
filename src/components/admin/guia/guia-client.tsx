@@ -72,6 +72,8 @@ const SECTIONS: Section[] = [
       { title: 'Seguí cambiando el estado', detail: 'A medida que avanza, andá marcando: en producción → listo → entregado. Podés hacerlo desde la lista de pedidos, tocando el estado directamente, sin entrar a cada uno.' },
     ],
     tips: [
+      'Hay dos catálogos: /catalogo para cafeterías y /tienda para particulares. El link de la tienda se lo mandás por WhatsApp o lo ponés en Instagram.',
+      'Los pedidos de particulares aparecen en la lista con un cartelito "Minorista".',
       'El costo de envío que cargás al aprobar se suma automáticamente al comprobante.',
       'Al cliente solo le llega mail cuando aprobás o cancelás el pedido. Los estados del medio (producción, listo) son para vos.',
       'Te podés equivocar tranquila: el estado se puede volver para atrás, y un pedido aprobado se sigue pudiendo editar hasta que lo marcás entregado.',

@@ -131,6 +131,14 @@ export interface Product {
   sale_multiple: number;
   min_advance_hours: number | null;
   sort_order: number;
+  // === Canal minorista ===
+  /** Precio para particulares. Vacío = no se muestra en la tienda minorista. */
+  price_minorista: number | null;
+  visible_mayorista: boolean;
+  visible_minorista: boolean;
+  /** Mínimos propios del minorista: un particular compra de a 1, no de a 12. */
+  min_quantity_minorista: number;
+  sale_multiple_minorista: number;
   // Seguimiento de costo (se completa al actualizar materia prima / receta)
   cost_snapshot: number | null;
   cost_snapshot_at: string | null;
@@ -270,9 +278,12 @@ export interface OrderDetail extends Order {
 // === Inputs ===
 
 export interface CreateOrderInput {
+  /** Catálogo del que viene. Define precios, mínimos y qué datos se piden. */
+  canal?: 'mayorista' | 'minorista';
   name: string;
   phone: string;
-  email: string;
+  /** Opcional en minorista: a un particular solo se le pide nombre y teléfono. */
+  email?: string;
   delivery_method: DeliveryMethod;
   address?: string;
   city?: string;
@@ -483,6 +494,8 @@ export interface CartItem {
   min_quantity?: number;
   /** El pedido debe ser múltiplo de este número (default 1). */
   sale_multiple?: number;
+  /** De qué catálogo salió. El precio guardado es el de ese canal. */
+  canal?: 'mayorista' | 'minorista';
 }
 
 // === Tracking de pedido (público) ===

@@ -27,6 +27,8 @@ export function PackageCard({ pkg }: PackageCardProps) {
       image_url: pkg.image_url,
       min_advance_hours: null,
       sale_unit: 'paquete',
+      // Los paquetes son solo para cafeterías.
+      canal: 'mayorista',
     });
     toast.success(`${pkg.name} agregado al pedido`);
   };

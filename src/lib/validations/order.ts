@@ -11,9 +11,13 @@ export const orderItemSchema = z.object({
 );
 
 export const orderSchema = z.object({
+  /** Catálogo del que viene el pedido. Define precios y qué datos se piden. */
+  canal: z.enum(['mayorista', 'minorista']).default('mayorista'),
   name: z.string().min(1, 'El nombre es obligatorio'),
   phone: z.string().min(6, 'El teléfono es obligatorio'),
-  email: z.string().email('Email inválido'),
+  // A un particular solo se le pide nombre y teléfono; el mail es opcional y
+  // solo sirve para mandarle la confirmación y el seguimiento.
+  email: z.union([z.string().email('Email inválido'), z.literal('')]).optional(),
   delivery_method: z.enum(['pickup', 'delivery'], {
     required_error: 'Seleccioná un método de entrega',
   }),
@@ -49,6 +53,11 @@ export const orderSchema = z.object({
     message: 'La dirección es obligatoria para envíos a domicilio',
     path: ['address'],
   }
+).refine(
+  // A las cafeterías sí se les exige mail: es por donde les llega el
+  // comprobante y el aviso de aprobación.
+  (data) => data.canal === 'minorista' || !!data.email,
+  { message: 'El email es obligatorio', path: ['email'] }
 );
 
 export type OrderFormValues = z.infer<typeof orderSchema>;

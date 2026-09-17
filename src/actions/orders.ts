@@ -7,7 +7,8 @@ import { appendOrderToSheets } from '@/lib/google-sheets';
 import { getProductUnitCosts, getPackageUnitCosts } from '@/lib/production-cost';
 import { quantityError } from '@/lib/utils';
 import { revalidatePath } from 'next/cache';
-import type { CreateOrderInput, Order, OrderDetail, OrderFilters, OrderStatus, OrderItem } from '@/types';
+import { isCanal, productoParaCanal, visibleEnCanal, type Canal } from '@/lib/canal';
+import type { CreateOrderInput, Order, OrderDetail, OrderFilters, OrderStatus, OrderItem, Product } from '@/types';
 import { canEditOrderItems, isValidOrderStatus, orderStatusLabel } from '@/types';
 
 export async function createOrder(input: CreateOrderInput): Promise<{
@@ -27,6 +28,15 @@ export async function createOrder(input: CreateOrderInput): Promise<{
   const productIds = data.items.filter((i) => i.product_id).map((i) => i.product_id!);
   const packageIds = data.items.filter((i) => i.package_id).map((i) => i.package_id!);
 
+  // El canal decide qué lista de precios y qué mínimos rigen. Se resuelve acá,
+  // en el server: el precio que manda el navegador nunca se usa.
+  const canal: Canal = isCanal(data.canal) ? data.canal : 'mayorista';
+
+  // Los paquetes tienen un solo precio, pensado para cafeterías.
+  if (canal === 'minorista' && packageIds.length > 0) {
+    return { success: false, error: 'Los paquetes son solo para cafeterías.' };
+  }
+
   let productsData: {
     id: string;
     name: string;
@@ -40,9 +50,34 @@ export async function createOrder(input: CreateOrderInput): Promise<{
   if (productIds.length > 0) {
     const { data: products } = await supabase
       .from('products')
-      .select('id, name, price, min_quantity, sale_multiple, sale_unit')
+      .select(
+        'id, name, price, min_quantity, sale_multiple, sale_unit, price_minorista, visible_minorista, visible_mayorista, min_quantity_minorista, sale_multiple_minorista, is_active'
+      )
       .in('id', productIds);
-    productsData = products || [];
+
+    const crudos = (products || []) as unknown as Product[];
+
+    // Nadie puede pedir por la tienda minorista algo que no está publicado ahí
+    // (ni al revés) aunque arme el request a mano.
+    const fuera = crudos.find((p) => !visibleEnCanal(p, canal));
+    if (fuera) {
+      return {
+        success: false,
+        error: `"${fuera.name}" no está disponible en este catálogo.`,
+      };
+    }
+
+    productsData = crudos.map((p) => {
+      const listo = productoParaCanal(p, canal);
+      return {
+        id: listo.id,
+        name: listo.name,
+        price: listo.price,
+        min_quantity: listo.min_quantity,
+        sale_multiple: listo.sale_multiple,
+        sale_unit: listo.sale_unit,
+      };
+    });
   }
 
   if (packageIds.length > 0) {
@@ -114,10 +149,12 @@ export async function createOrder(input: CreateOrderInput): Promise<{
     .from('orders')
     .insert({
       status: 'received',
-      business_name: data.name,
+      canal,
+      // Un particular no tiene negocio: el campo ni se le pregunta.
+      business_name: canal === 'minorista' ? null : data.name,
       contact_name: data.name,
       phone: data.phone,
-      email: data.email,
+      email: data.email?.trim() || null,
       delivery_method: data.delivery_method,
       address: data.address || null,
       city: data.city || null,
