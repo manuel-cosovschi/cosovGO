@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
@@ -49,6 +49,27 @@ export function OrderForm() {
       })),
     },
   });
+
+  // El carrito se hidrata desde localStorage DESPUÉS del primer render, así que
+  // lo que quedó en `defaultValues` es un carrito vacío y el canal por defecto.
+  // Hay que resincronizar los dos:
+  //
+  // - Sin el canal, un pedido minorista se validaba como mayorista y quedaba
+  //   exigiendo el mail.
+  // - Sin los items, la validación fallaba por "el pedido debe tener al menos
+  //   un producto" sin mostrar ningún error en pantalla, y el botón no hacía
+  //   nada. Pasaba al recargar /pedido o al entrar directo por el link.
+  useEffect(() => {
+    setValue('canal', canal);
+    setValue(
+      'items',
+      items.map((item) => ({
+        product_id: item.type === 'product' ? item.id : undefined,
+        package_id: item.type === 'package' ? item.id : undefined,
+        quantity: item.quantity,
+      }))
+    );
+  }, [canal, items, setValue]);
 
   const deliveryMethod = watch('delivery_method');
 
