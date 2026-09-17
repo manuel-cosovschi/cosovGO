@@ -5,15 +5,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCart } from '@/components/cart/cart-provider';
 import type { Product } from '@/types';
+import type { Canal } from '@/lib/canal';
 import { toast } from 'sonner';
 import { ShoppingBag, Minus, Plus } from 'lucide-react';
 import { quantityStep, minValidQuantity, normalizeQuantity } from '@/lib/utils';
 
 interface AddToCartButtonProps {
   product: Product;
+  /** El producto ya viene con el precio y los mínimos de este canal. */
+  canal?: Canal;
 }
 
-export function AddToCartButton({ product }: AddToCartButtonProps) {
+export function AddToCartButton({ product, canal = 'mayorista' }: AddToCartButtonProps) {
   const { addItem } = useCart();
   const step = quantityStep(product.sale_multiple);
   const minQ = minValidQuantity(product.min_quantity, product.sale_multiple);
@@ -32,6 +35,7 @@ export function AddToCartButton({ product }: AddToCartButtonProps) {
       sale_unit: product.sale_unit,
       min_quantity: product.min_quantity,
       sale_multiple: product.sale_multiple,
+      canal,
     });
     toast.success(`${product.name} x${qty} agregado al pedido`);
   };

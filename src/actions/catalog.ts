@@ -1,6 +1,7 @@
 'use server';
 
 import { createServerClient } from '@/lib/supabase/server';
+import { productoParaCanal, visibleEnCanal, type Canal } from '@/lib/canal';
 import type { Product, Category, PackageDetail } from '@/types';
 
 export async function getActiveCategories(): Promise<Category[]> {
@@ -13,7 +14,16 @@ export async function getActiveCategories(): Promise<Category[]> {
   return (data as Category[]) || [];
 }
 
-export async function getActiveProducts(categorySlug?: string): Promise<Product[]> {
+/**
+ * Productos del catálogo de un canal.
+ *
+ * Devuelve cada producto con el precio y los mínimos del canal ya aplicados,
+ * así quien lo consume lee `product.price` sin saber que hay dos listas.
+ */
+export async function getActiveProducts(
+  canal: Canal = 'mayorista',
+  categorySlug?: string
+): Promise<Product[]> {
   const supabase = await createServerClient();
   let query = supabase
     .from('products')
@@ -33,10 +43,15 @@ export async function getActiveProducts(categorySlug?: string): Promise<Product[
   }
 
   const { data } = await query;
-  return (data as Product[]) || [];
+  return ((data as Product[]) || [])
+    .filter((p) => visibleEnCanal(p, canal))
+    .map((p) => productoParaCanal(p, canal));
 }
 
-export async function getProductBySlug(slug: string): Promise<Product | null> {
+export async function getProductBySlug(
+  slug: string,
+  canal: Canal = 'mayorista'
+): Promise<Product | null> {
   const supabase = await createServerClient();
   const { data } = await supabase
     .from('products')
@@ -44,7 +59,11 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
     .eq('slug', slug)
     .eq('is_active', true)
     .single();
-  return data as Product | null;
+
+  const product = data as Product | null;
+  if (!product || !visibleEnCanal(product, canal)) return null;
+
+  return productoParaCanal(product, canal);
 }
 
 export async function getActivePackages(): Promise<PackageDetail[]> {

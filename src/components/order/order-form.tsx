@@ -17,7 +17,8 @@ import { Loader2 } from 'lucide-react';
 
 export function OrderForm() {
   const router = useRouter();
-  const { items, subtotal, clearCart } = useCart();
+  const { items, subtotal, clearCart, canal } = useCart();
+  const esMinorista = canal === 'minorista';
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // YYYY-MM-DD en hora local, para el atributo `min` del date input.
@@ -38,6 +39,7 @@ export function OrderForm() {
   } = useForm<OrderFormValues>({
     resolver: zodResolver(orderSchema),
     defaultValues: {
+      canal,
       delivery_method: 'delivery',
       requires_invoice: false,
       items: items.map((item) => ({
@@ -61,6 +63,9 @@ export function OrderForm() {
     try {
       const result = await createOrder({
         ...data,
+        // El canal manda el carrito, no el formulario: define qué precios se
+        // cobran y el server lo vuelve a validar.
+        canal,
         items: items.map((item) => ({
           product_id: item.type === 'product' ? item.id : undefined,
           package_id: item.type === 'package' ? item.id : undefined,
@@ -92,10 +97,12 @@ export function OrderForm() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="name">Nombre *</Label>
+            <Label htmlFor="name">
+              {esMinorista ? 'Nombre y apellido *' : 'Nombre del negocio *'}
+            </Label>
             <Input
               id="name"
-              placeholder="Tu nombre"
+              placeholder={esMinorista ? 'Tu nombre y apellido' : 'Tu negocio'}
               {...register('name')}
             />
             {errors.name && (
@@ -104,13 +111,18 @@ export function OrderForm() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email *</Label>
+            <Label htmlFor="email">Email {esMinorista ? '' : '*'}</Label>
             <Input
               id="email"
               type="email"
               placeholder="tuemail@ejemplo.com"
               {...register('email')}
             />
+            {esMinorista && (
+              <p className="text-xs text-stone-400">
+                Opcional. Si lo dejás, te mandamos la confirmación por mail.
+              </p>
+            )}
             {errors.email && (
               <p className="text-sm text-red-600">{errors.email.message}</p>
             )}

@@ -6,14 +6,17 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/components/cart/cart-provider';
 import { formatPrice, minValidQuantity } from '@/lib/utils';
+import { CANAL_BASE_PATH, type Canal } from '@/lib/canal';
 import type { Product } from '@/types';
 import { toast } from 'sonner';
 
 interface ProductCardProps {
   product: Product;
+  /** El producto ya viene con el precio y los mínimos de este canal. */
+  canal?: Canal;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export function ProductCard({ product, canal = 'mayorista' }: ProductCardProps) {
   const { addItem } = useCart();
 
   const handleAddToCart = (e: React.MouseEvent) => {
@@ -30,13 +33,14 @@ export function ProductCard({ product }: ProductCardProps) {
       sale_unit: product.sale_unit,
       min_quantity: product.min_quantity,
       sale_multiple: product.sale_multiple,
+      canal,
     });
     toast.success(`${product.name} x${qty} agregado al pedido`);
   };
 
   return (
     <Link
-      href={`/catalogo/${product.slug}`}
+      href={`${CANAL_BASE_PATH[canal]}/${product.slug}`}
       className="group block overflow-hidden rounded-lg border border-stone-200 bg-white transition-shadow hover:shadow-md"
     >
       <div className="relative aspect-square overflow-hidden bg-stone-100">

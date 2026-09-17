@@ -111,7 +111,7 @@ Margen estimado: ${formatPrice(margin)}${someMissingCost ? '\n(falta cargar cost
 
 Cliente: ${order.contact_name || order.business_name}
 Teléfono: ${order.phone}
-Email: ${order.email}
+Email: ${order.email || '(no dejó)'}
 
 Fecha de entrega: ${formatDate(order.delivery_date)}
 Método: ${order.delivery_method === 'pickup' ? 'Retiro' : 'Envío'}

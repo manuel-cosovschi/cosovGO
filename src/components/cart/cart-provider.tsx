@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import type { CartItem } from '@/types';
 import { normalizeQuantity } from '@/lib/utils';
+import type { Canal } from '@/lib/canal';
+import { toast } from 'sonner';
 
 interface CartContextType {
   items: CartItem[];
@@ -13,6 +15,8 @@ interface CartContextType {
   totalItems: number;
   subtotal: number;
   maxAdvanceHours: number | null;
+  /** Canal del carrito actual. Los precios guardados son los de este canal. */
+  canal: Canal;
 }
 
 const CartContext = createContext<CartContextType | null>(null);
@@ -51,6 +55,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const addItem = useCallback((item: CartItem) => {
     setItems((prev) => {
+      // Si venía armando un pedido en el otro catálogo, los precios no son
+      // comparables: se empieza de nuevo en vez de mezclar mayorista con
+      // minorista en el mismo pedido.
+      const canalPrevio = prev.find((i) => i.canal)?.canal;
+      const canalNuevo = item.canal ?? 'mayorista';
+      if (canalPrevio && canalPrevio !== canalNuevo) {
+        toast.info('Empezamos un pedido nuevo porque cambiaste de catálogo.');
+        return [item];
+      }
+
       const existing = prev.find((i) => i.id === item.id && i.type === item.type);
       if (existing) {
         return prev.map((i) =>
@@ -89,6 +103,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (max === null) return i.min_advance_hours;
     return Math.max(max, i.min_advance_hours);
   }, null);
+  const canal: Canal = items.find((i) => i.canal)?.canal ?? 'mayorista';
 
   return (
     <CartContext.Provider
@@ -101,6 +116,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         totalItems,
         subtotal,
         maxAdvanceHours,
+        canal,
       }}
     >
       {children}
