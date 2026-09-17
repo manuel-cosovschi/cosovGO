@@ -69,11 +69,12 @@ const SECTIONS: Section[] = [
       { title: 'Abrí un pedido', detail: 'Tocá cualquier pedido de la lista para ver el detalle: datos del cliente, qué pidió, fecha de entrega y total.' },
       { title: 'Aprobá el pedido', detail: 'Cuando lo revisás y está todo bien, tocá "Aprobar pedido". Ahí podés cargar el costo de envío si corresponde.' },
       { title: 'Descargá el comprobante', detail: 'Con el botón "Descargar comprobante" se genera un PDF con el logo de COSOV y el detalle del pedido. Ese se lo mandás al cliente.' },
-      { title: 'Seguí cambiando el estado', detail: 'A medida que avanza, andá marcando: en producción → listo → enviado → entregado.' },
+      { title: 'Seguí cambiando el estado', detail: 'A medida que avanza, andá marcando: en producción → listo → entregado. Podés hacerlo desde la lista de pedidos, tocando el estado directamente, sin entrar a cada uno.' },
     ],
     tips: [
       'El costo de envío que cargás al aprobar se suma automáticamente al comprobante.',
-      'Cada cambio de estado le avisa al cliente por email.',
+      'Al cliente solo le llega mail cuando aprobás o cancelás el pedido. Los estados del medio (producción, listo) son para vos.',
+      'Te podés equivocar tranquila: el estado se puede volver para atrás, y un pedido aprobado se sigue pudiendo editar hasta que lo marcás entregado.',
     ],
   },
   {
@@ -246,7 +247,7 @@ export function GuiaClient() {
             'Cargás el envío',
             'Descargás el comprobante',
             'Producción',
-            'Listo / Enviado',
+            'Listo',
             'Entregado',
             'Marcás cobrado',
           ].map((step, i, arr) => (

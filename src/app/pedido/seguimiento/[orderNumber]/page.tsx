@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getOrderTracking } from '@/actions/inventory';
-import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, DELIVERY_METHOD_LABELS } from '@/types';
+import { ORDER_STATUS_COLORS, DELIVERY_METHOD_LABELS, orderStatusLabel } from '@/types';
 import type { OrderStatus, DeliveryMethod } from '@/types';
 import { formatPrice, formatDate, formatDateTime } from '@/lib/utils';
 import { ArrowLeft, CheckCircle2, Clock, Package, Truck } from 'lucide-react';
@@ -35,6 +35,7 @@ export default async function OrderTrackingPage({ params }: Props) {
   const statusIcon = (status: string) => {
     switch (status) {
       case 'delivered': return <CheckCircle2 className="h-5 w-5 text-green-600" />;
+      // "shipped" ya no se asigna, pero sigue apareciendo en historiales viejos.
       case 'shipped': return <Truck className="h-5 w-5 text-purple-600" />;
       case 'ready': return <Package className="h-5 w-5 text-emerald-600" />;
       default: return <Clock className="h-5 w-5 text-stone-400" />;
@@ -59,8 +60,8 @@ export default async function OrderTrackingPage({ params }: Props) {
               </h1>
               <p className="text-sm text-stone-500">{tracking.business_name}</p>
             </div>
-            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${ORDER_STATUS_COLORS[tracking.status]}`}>
-              {ORDER_STATUS_LABELS[tracking.status]}
+            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${ORDER_STATUS_COLORS[tracking.status] ?? 'bg-stone-100 text-stone-700'}`}>
+              {orderStatusLabel(tracking.status)}
             </span>
           </div>
         </div>
@@ -118,7 +119,7 @@ export default async function OrderTrackingPage({ params }: Props) {
                 <div className="mt-0.5">{statusIcon(event.status)}</div>
                 <div>
                   <p className="text-sm font-medium text-stone-900">
-                    {ORDER_STATUS_LABELS[event.status as OrderStatus] || event.status}
+                    {orderStatusLabel(event.status)}
                   </p>
                   <p className="text-xs text-stone-500">{formatDateTime(event.date)}</p>
                   {event.notes && (

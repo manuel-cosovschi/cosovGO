@@ -147,11 +147,6 @@ export async function sendOrderStatusUpdate(
       intro:
         'Confirmamos que vamos a hacer tu pedido. Ya empezamos la producción y te vamos a avisar cuando esté listo.',
     },
-    rejected: {
-      subject: `Tu pedido #${data.orderNumber} no pudo realizarse`,
-      intro:
-        'Lamentablemente no vamos a poder hacer tu pedido. Si tenés dudas, respondenos este mail y te contamos.',
-    },
     in_production: {
       subject: `Tu pedido #${data.orderNumber} está en producción`,
       intro: 'Ya estamos preparando todo para vos.',
@@ -161,17 +156,16 @@ export async function sendOrderStatusUpdate(
       intro:
         'Tu pedido ya está listo para la entrega o el retiro acordado.',
     },
-    shipped: {
-      subject: `Tu pedido #${data.orderNumber} salió para entrega`,
-      intro: 'Salió rumbo a la dirección de entrega.',
-    },
     delivered: {
       subject: `Tu pedido #${data.orderNumber} fue entregado`,
       intro: '¡Esperamos que lo disfrutes! Gracias por elegirnos.',
     },
+    // "Cancelado" cubre también los pedidos que antes se marcaban como
+    // rechazados, así que el texto sirve para los dos casos.
     cancelled: {
       subject: `Tu pedido #${data.orderNumber} fue cancelado`,
-      intro: 'El pedido quedó cancelado. Cualquier duda, respondenos este mail.',
+      intro:
+        'Tu pedido quedó cancelado y no lo vamos a preparar. Si creés que es un error o querés hacerlo de nuevo, respondenos este mail y lo vemos.',
     },
   };
 
