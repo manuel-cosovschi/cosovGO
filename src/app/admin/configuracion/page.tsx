@@ -1,114 +1,30 @@
-'use client';
+import { getBusiness } from '@/actions/business';
+import { PageHeader } from '@/components/ui/page-header';
+import { BusinessSettingsForm } from '@/components/admin/settings/business-settings-form';
 
-import { useEffect, useState } from 'react';
-import { getSettings, updateSettings } from '@/actions/settings';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+export const metadata = { title: 'Configuración' };
 
-export default function ConfiguracionPage() {
-  const [settings, setSettings] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      const data = await getSettings();
-      setSettings(data);
-      setLoading(false);
-    }
-    load();
-  }, []);
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const result = await updateSettings({
-        admin_email: JSON.stringify(settings.admin_email || ''),
-        business_name: JSON.stringify(settings.business_name || 'COSOV.'),
-        business_phone: JSON.stringify(settings.business_phone || ''),
-      });
-      if (result.success) {
-        toast.success('Configuración guardada');
-      } else {
-        toast.error(result.error || 'Error al guardar');
-      }
-    } catch {
-      toast.error('Error al guardar');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const updateField = (key: string, value: string) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-stone-200 border-t-stone-900" />
-      </div>
-    );
-  }
-
-  // Parse JSON strings for display
-  const parseValue = (val: string) => {
-    try {
-      const parsed = JSON.parse(val);
-      return typeof parsed === 'string' ? parsed : val;
-    } catch {
-      return val;
-    }
-  };
+export default async function SettingsPage() {
+  const business = await getBusiness();
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <h1 className="text-2xl font-bold text-stone-900">Configuración</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Configuración"
+        description="Los datos de tu negocio. Se usan en toda la aplicación y en la tienda pública."
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Datos del negocio</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="business_name">Nombre del negocio</Label>
-            <Input
-              id="business_name"
-              value={parseValue(settings.business_name || '"COSOV."')}
-              onChange={(e) => updateField('business_name', e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="admin_email">Email de administración</Label>
-            <Input
-              id="admin_email"
-              type="email"
-              value={parseValue(settings.admin_email || '""')}
-              onChange={(e) => updateField('admin_email', e.target.value)}
-            />
-            <p className="text-xs text-stone-400">
-              A este email se envían las notificaciones de nuevos pedidos.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="business_phone">Teléfono</Label>
-            <Input
-              id="business_phone"
-              value={parseValue(settings.business_phone || '""')}
-              onChange={(e) => updateField('business_phone', e.target.value)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Button onClick={handleSave} disabled={saving}>
-        {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Guardar configuración
-      </Button>
+      {business ? (
+        <BusinessSettingsForm business={business} />
+      ) : (
+        <div className="surface p-8 text-center">
+          <p className="text-sm text-stone-500">
+            No encontramos un negocio asociado a tu usuario. Ejecutá el seed de instalación
+            (<code className="rounded bg-stone-100 px-1 py-0.5">npm run demo:seed</code>) o creá el
+            negocio desde la base de datos.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

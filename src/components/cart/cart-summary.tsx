@@ -1,17 +1,18 @@
 'use client';
 
-import { Minus, Plus, Trash2 } from 'lucide-react';
+import { Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react';
 import { useCart } from './cart-provider';
 import { Button } from '@/components/ui/button';
-import { formatPrice } from '@/lib/utils';
+import { useMoney } from '@/components/admin/business-provider';
 
 export function CartSummary() {
+  const money = useMoney();
   const { items, updateQuantity, removeItem, subtotal } = useCart();
 
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
-        <span className="text-4xl mb-4">🛒</span>
+        <ShoppingBag className="mb-4 h-8 w-8 text-stone-300" />
         <p className="text-stone-500">Tu pedido está vacío.</p>
         <p className="mt-1 text-sm text-stone-400">
           Explorá el catálogo para agregar productos.
@@ -30,7 +31,7 @@ export function CartSummary() {
             <div className="flex-1 min-w-0">
               <p className="font-medium text-stone-900 truncate">{item.name}</p>
               <p className="text-sm text-stone-500">
-                {formatPrice(item.price)} / {item.sale_unit}
+                {money(item.price)} / {item.sale_unit}
               </p>
             </div>
 
@@ -56,7 +57,7 @@ export function CartSummary() {
             </div>
 
             <p className="w-20 text-right font-medium text-stone-900">
-              {formatPrice(item.price * item.quantity)}
+              {money(item.price * item.quantity)}
             </p>
 
             <Button
@@ -73,7 +74,7 @@ export function CartSummary() {
 
       <div className="flex items-center justify-between border-t border-stone-200 pt-4">
         <span className="text-base font-semibold text-stone-900">Subtotal estimado</span>
-        <span className="text-xl font-bold text-stone-900">{formatPrice(subtotal)}</span>
+        <span className="text-xl font-bold text-stone-900">{money(subtotal)}</span>
       </div>
     </div>
   );

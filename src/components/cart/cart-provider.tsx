@@ -16,7 +16,7 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | null>(null);
 
-const CART_STORAGE_KEY = 'cosov-cart';
+const CART_STORAGE_KEY = 'gastroos-cart';
 
 function loadCart(): CartItem[] {
   if (typeof window === 'undefined') return [];

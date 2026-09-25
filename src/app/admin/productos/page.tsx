@@ -1,106 +1,145 @@
-'use client';
-
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { listAllProducts, toggleProductActive } from '@/actions/products';
+import { Package, Plus, Tags } from 'lucide-react';
+import { listProductsWithMargin } from '@/actions/products';
+import { getCurrentBusiness } from '@/lib/business';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { formatPrice } from '@/lib/utils';
-import type { Product } from '@/types';
-import { Plus, Pencil, ImageIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { cn, formatPrice } from '@/lib/utils';
 
-export default function ProductosPage() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+export const metadata = { title: 'Productos' };
 
-  const load = async () => {
-    setLoading(true);
-    const data = await listAllProducts();
-    setProducts(data);
-    setLoading(false);
-  };
+export default async function ProductsPage() {
+  const [products, business] = await Promise.all([
+    listProductsWithMargin(),
+    getCurrentBusiness(),
+  ]);
 
-  useEffect(() => { load(); }, []);
-
-  const handleToggle = async (id: string) => {
-    const result = await toggleProductActive(id);
-    if (result.success) {
-      toast.success('Estado actualizado');
-      load();
-    } else {
-      toast.error(result.error || 'Error');
-    }
-  };
+  const money = (value: number) =>
+    formatPrice(value, { currency: business?.currency, locale: business?.locale });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-stone-900">Productos</h1>
-        <Button asChild>
-          <Link href="/admin/productos/nuevo">
-            <Plus className="mr-2 h-4 w-4" /> Nuevo producto
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="Productos"
+        description="Tu catálogo, con el precio, el costo y el margen de cada cosa."
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <Link href="/admin/categorias">
+                <Tags className="h-4 w-4" />
+                Categorías
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link href="/admin/productos/nuevo">
+                <Plus className="h-4 w-4" />
+                Nuevo producto
+              </Link>
+            </Button>
+          </>
+        }
+      />
 
-      <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-stone-200 border-t-stone-900" />
-          </div>
-        ) : products.length === 0 ? (
-          <p className="px-6 py-16 text-center text-stone-500">No hay productos creados.</p>
+      <div className="surface overflow-hidden">
+        {products.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title="Todavía no cargaste productos"
+            description="Cargá lo que vendés con su precio y su costo para que GastroOS calcule tu margen solo."
+            actionLabel="Crear el primero"
+            actionHref="/admin/productos/nuevo"
+          />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="scroll-subtle overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b border-stone-200 bg-stone-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-stone-500 w-16">Foto</th>
-                  <th className="px-4 py-3 text-left font-medium text-stone-500">Nombre</th>
-                  <th className="px-4 py-3 text-left font-medium text-stone-500">Categoría</th>
-                  <th className="px-4 py-3 text-left font-medium text-stone-500">Precio</th>
-                  <th className="px-4 py-3 text-left font-medium text-stone-500">Estado</th>
-                  <th className="px-4 py-3 text-left font-medium text-stone-500">Acciones</th>
+              <thead className="border-b border-stone-200 bg-stone-50/80">
+                <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
+                  <th className="px-4 py-3 font-medium">Producto</th>
+                  <th className="hidden px-4 py-3 font-medium sm:table-cell">Categoría</th>
+                  <th className="px-4 py-3 text-right font-medium">Precio</th>
+                  <th className="hidden px-4 py-3 text-right font-medium md:table-cell">Costo</th>
+                  <th className="px-4 py-3 text-right font-medium">Margen</th>
+                  <th className="hidden px-4 py-3 text-right font-medium lg:table-cell">Stock</th>
+                  <th className="px-4 py-3 font-medium">Estado</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-200">
+              <tbody className="divide-y divide-stone-100">
                 {products.map((product) => (
-                  <tr key={product.id} className="hover:bg-stone-50">
-                    <td className="px-4 py-2">
-                      {product.image_url ? (
-                        <Image
-                          src={product.image_url}
-                          alt={product.name}
-                          width={48}
-                          height={48}
-                          className="h-12 w-12 rounded-md object-cover border border-stone-200"
-                        />
-                      ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded-md bg-stone-100 border border-stone-200">
-                          <ImageIcon className="h-5 w-5 text-stone-300" />
-                        </div>
-                      )}
+                  <tr key={product.id} className="transition-colors hover:bg-stone-50">
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/admin/productos/${product.id}`}
+                        className="flex items-center gap-3"
+                      >
+                        {product.image_url ? (
+                          <Image
+                            src={product.image_url}
+                            alt=""
+                            width={36}
+                            height={36}
+                            className="h-9 w-9 shrink-0 rounded-lg object-cover"
+                            unoptimized
+                          />
+                        ) : (
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100">
+                            <Package className="h-4 w-4 text-stone-400" />
+                          </span>
+                        )}
+                        <span className="font-medium text-stone-900">{product.name}</span>
+                      </Link>
                     </td>
-                    <td className="px-4 py-3 font-medium text-stone-900">{product.name}</td>
-                    <td className="px-4 py-3 text-stone-600">
+                    <td className="hidden px-4 py-3 text-stone-500 sm:table-cell">
                       {product.category?.name || '—'}
                     </td>
-                    <td className="px-4 py-3 text-stone-900">{formatPrice(product.price)}</td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => handleToggle(product.id)}>
-                        <Badge variant={product.is_active ? 'default' : 'secondary'}>
-                          {product.is_active ? 'Activo' : 'Inactivo'}
-                        </Badge>
-                      </button>
+                    <td className="px-4 py-3 text-right font-medium tabular text-stone-900">
+                      {money(product.price)}
+                    </td>
+                    <td className="hidden px-4 py-3 text-right tabular text-stone-500 md:table-cell">
+                      {product.unit_cost > 0 ? money(product.unit_cost) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular">
+                      {product.unit_cost > 0 ? (
+                        <span
+                          className={cn(
+                            'font-medium',
+                            product.margin_pct >= 40
+                              ? 'text-brand-700'
+                              : product.margin_pct >= 20
+                                ? 'text-amber-700'
+                                : 'text-rose-600'
+                          )}
+                        >
+                          {product.margin_pct}%
+                        </span>
+                      ) : (
+                        <span className="text-xs text-stone-400">sin costo</span>
+                      )}
+                    </td>
+                    <td className="hidden px-4 py-3 text-right tabular lg:table-cell">
+                      <span
+                        className={
+                          product.min_stock_quantity > 0 &&
+                          product.stock_quantity < product.min_stock_quantity
+                            ? 'text-amber-700'
+                            : 'text-stone-500'
+                        }
+                      >
+                        {product.stock_quantity}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
-                      <Button asChild variant="ghost" size="sm">
-                        <Link href={`/admin/productos/${product.id}`}>
-                          <Pencil className="mr-1 h-3 w-3" /> Editar
-                        </Link>
-                      </Button>
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
+                          product.is_active
+                            ? 'bg-brand-50 text-brand-800 ring-brand-200'
+                            : 'bg-stone-100 text-stone-600 ring-stone-200'
+                        )}
+                      >
+                        {product.is_active ? 'Activo' : 'Inactivo'}
+                      </span>
                     </td>
                   </tr>
                 ))}

@@ -1,172 +1,137 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createServerClient } from '@/lib/supabase/server';
-import { revalidatePath } from 'next/cache';
-
-const BUCKET = 'product-images';
+import { requireBusinessId } from '@/lib/business';
+import { ACCEPTED_IMAGE_TYPES, MAX_IMAGE_SIZE, MEDIA_BUCKET } from '@/lib/constants';
 
 /**
- * Sube una imagen al storage de Supabase usando el service role (sin RLS).
- * Recibe un FormData con un campo "file".
+ * Subida de imágenes al storage de Supabase.
+ *
+ * Se usa el service role porque las policies de storage no distinguen negocio;
+ * la autorización la hace esta capa: sin sesión no se sube nada, y los archivos
+ * se guardan bajo un prefijo por negocio para poder limpiarlos después.
  */
-export async function uploadImage(formData: FormData): Promise<{
-  success: boolean;
-  url?: string;
-  error?: string;
-}> {
-  const file = formData.get('file') as File | null;
-  if (!file) {
-    return { success: false, error: 'No se recibió ningún archivo.' };
-  }
+async function assertAuthenticated(): Promise<boolean> {
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return !!user;
+}
 
-  // Validar tipo
-  const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
-  if (!validTypes.includes(file.type)) {
+export async function uploadImage(
+  formData: FormData
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  const file = formData.get('file') as File | null;
+  if (!file) return { success: false, error: 'No se recibió ningún archivo.' };
+
+  if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
     return { success: false, error: 'Formato no soportado. Usá JPG, PNG o WebP.' };
   }
-
-  // Validar tamaño (5MB)
-  if (file.size > 5 * 1024 * 1024) {
-    return { success: false, error: 'La imagen no puede superar los 5MB.' };
+  if (file.size > MAX_IMAGE_SIZE) {
+    return { success: false, error: 'La imagen no puede superar los 5 MB.' };
   }
-
-  // Verificar autenticación
-  const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  if (!(await assertAuthenticated())) {
     return { success: false, error: 'No tenés permiso para subir imágenes.' };
   }
 
-  // Subir con service role (bypass RLS en storage)
+  const businessId = await requireBusinessId();
   const admin = createAdminClient();
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const path = `${businessId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
 
   const { error } = await admin.storage
-    .from(BUCKET)
-    .upload(fileName, file, {
-      cacheControl: '3600',
-      upsert: false,
-    });
+    .from(MEDIA_BUCKET)
+    .upload(path, file, { cacheControl: '3600', upsert: false });
 
   if (error) {
-    console.error('Storage upload error:', error);
-    return { success: false, error: 'Error al subir la imagen. Verificá que el bucket "product-images" exista.' };
+    return {
+      success: false,
+      error: `No se pudo subir la imagen. Verificá que el bucket "${MEDIA_BUCKET}" exista.`,
+    };
   }
 
-  const { data: urlData } = admin.storage.from(BUCKET).getPublicUrl(fileName);
-
-  return { success: true, url: urlData.publicUrl };
+  const { data } = admin.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+  return { success: true, url: data.publicUrl };
 }
 
-/**
- * Elimina una imagen del storage.
- */
-export async function deleteImage(imageUrl: string): Promise<{
-  success: boolean;
-  error?: string;
-}> {
-  const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return { success: false, error: 'No tenés permiso.' };
-  }
+export async function deleteImage(imageUrl: string): Promise<{ success: boolean; error?: string }> {
+  if (!(await assertAuthenticated())) return { success: false, error: 'No tenés permiso.' };
 
-  // Extraer el path del archivo desde la URL
-  const urlParts = imageUrl.split(`/storage/v1/object/public/${BUCKET}/`);
-  if (urlParts.length < 2) {
-    return { success: false, error: 'URL de imagen inválida.' };
-  }
-  const filePath = urlParts[1];
+  const parts = imageUrl.split(`/storage/v1/object/public/${MEDIA_BUCKET}/`);
+  if (parts.length < 2) return { success: false, error: 'URL de imagen inválida.' };
 
   const admin = createAdminClient();
-  const { error } = await admin.storage.from(BUCKET).remove([filePath]);
+  const { error } = await admin.storage.from(MEDIA_BUCKET).remove([parts[1]]);
 
-  if (error) {
-    console.error('Storage delete error:', error);
-    return { success: false, error: 'Error al eliminar la imagen.' };
-  }
-
+  if (error) return { success: false, error: 'No se pudo eliminar la imagen.' };
   return { success: true };
 }
 
-/**
- * Sube una imagen y actualiza el campo image_url de un producto.
- * Todo en una sola acción para Valentina.
- */
-export async function uploadProductImage(productId: string, formData: FormData): Promise<{
-  success: boolean;
-  url?: string;
-  error?: string;
-}> {
-  // Subir imagen
-  const uploadResult = await uploadImage(formData);
-  if (!uploadResult.success) return uploadResult;
+/** Sube la imagen y la asocia al producto en un solo paso. */
+export async function uploadProductImage(
+  productId: string,
+  formData: FormData
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  const upload = await uploadImage(formData);
+  if (!upload.success) return upload;
 
-  // Actualizar producto
-  const admin = createAdminClient();
+  const businessId = await requireBusinessId();
+  const supabase = await createServerClient();
 
-  // Obtener imagen anterior para borrarla
-  const { data: product } = await admin
+  const { data: product } = await supabase
     .from('products')
     .select('image_url')
     .eq('id', productId)
-    .single();
+    .eq('business_id', businessId)
+    .maybeSingle();
 
-  // Actualizar con la nueva URL
-  const { error } = await admin
+  const { error } = await supabase
     .from('products')
-    .update({ image_url: uploadResult.url })
-    .eq('id', productId);
+    .update({ image_url: upload.url })
+    .eq('id', productId)
+    .eq('business_id', businessId);
 
-  if (error) {
-    return { success: false, error: 'Error al actualizar el producto.' };
-  }
+  if (error) return { success: false, error: 'No se pudo actualizar el producto.' };
 
-  // Borrar imagen anterior si existía
-  if (product?.image_url) {
-    await deleteImage(product.image_url).catch(() => {});
-  }
+  // La imagen anterior ya no se usa: liberamos el espacio.
+  if (product?.image_url) await deleteImage(product.image_url).catch(() => {});
 
-  revalidatePath('/admin/productos');
-  revalidatePath(`/admin/productos/${productId}`);
-  revalidatePath('/catalogo');
-
-  return { success: true, url: uploadResult.url };
+  revalidateImageViews(productId);
+  return { success: true, url: upload.url };
 }
 
-/**
- * Quita la imagen de un producto (la borra del storage y limpia el campo).
- */
-export async function removeProductImage(productId: string): Promise<{
-  success: boolean;
-  error?: string;
-}> {
+export async function removeProductImage(
+  productId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!(await assertAuthenticated())) return { success: false, error: 'No tenés permiso.' };
+
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: 'No tenés permiso.' };
 
-  const admin = createAdminClient();
-
-  const { data: product } = await admin
+  const { data: product } = await supabase
     .from('products')
     .select('image_url')
     .eq('id', productId)
-    .single();
+    .eq('business_id', businessId)
+    .maybeSingle();
 
-  if (product?.image_url) {
-    await deleteImage(product.image_url).catch(() => {});
-  }
+  if (product?.image_url) await deleteImage(product.image_url).catch(() => {});
 
-  await admin
+  await supabase
     .from('products')
     .update({ image_url: null })
-    .eq('id', productId);
+    .eq('id', productId)
+    .eq('business_id', businessId);
 
+  revalidateImageViews(productId);
+  return { success: true };
+}
+
+function revalidateImageViews(productId: string) {
   revalidatePath('/admin/productos');
   revalidatePath(`/admin/productos/${productId}`);
   revalidatePath('/catalogo');
-
-  return { success: true };
 }
