@@ -1,20 +1,21 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ProductForm } from '@/components/admin/products/product-form';
-import { RecipeManager } from '@/components/admin/products/recipe-manager';
-import { ProductStockManager } from '@/components/admin/products/product-stock-manager';
-import { getProductById } from '@/actions/products';
-import { listAllCategories } from '@/actions/categories';
+import { ArrowLeft } from 'lucide-react';
+import { getProduct } from '@/actions/products';
+import { listCategories } from '@/actions/categories';
 import { getProductRecipe, listIngredients } from '@/actions/ingredients';
+import { PageHeader } from '@/components/ui/page-header';
+import { ProductForm } from '@/components/admin/products/product-form';
+import { ProductStockManager } from '@/components/admin/products/product-stock-manager';
+import { RecipeManager } from '@/components/admin/products/recipe-manager';
 
-interface Props {
-  params: Promise<{ id: string }>;
-}
+export const metadata = { title: 'Editar producto' };
 
-export default async function EditarProductoPage({ params }: Props) {
+export default async function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const [product, categories, recipe, ingredients] = await Promise.all([
-    getProductById(id),
-    listAllCategories(),
+    getProduct(id),
+    listCategories(),
     getProductRecipe(id),
     listIngredients(true),
   ]);
@@ -23,17 +24,21 @@ export default async function EditarProductoPage({ params }: Props) {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-stone-900">Editar producto</h1>
+      <Link
+        href="/admin/productos"
+        className="inline-flex items-center gap-1 text-sm text-stone-500 transition-colors hover:text-stone-900"
+      >
+        <ArrowLeft className="h-4 w-4" /> Volver a productos
+      </Link>
+
+      <PageHeader title={product.name} description="Datos, stock y receta del producto." />
+
       <ProductForm product={product} categories={categories} />
-
-      {/* Stock Management */}
       <ProductStockManager product={product} />
-
-      {/* Recipe Management */}
       <RecipeManager
         productId={product.id}
         productName={product.name}
-        batchSize={(product as unknown as { batch_size: number }).batch_size || 1}
+        batchSize={product.batch_size}
         currentRecipe={recipe}
         availableIngredients={ingredients}
       />

@@ -1,40 +1,61 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
+
 import {
-  LayoutDashboard,
-  ClipboardList,
-  Package,
-  BoxesIcon,
-  TagIcon,
-  Settings,
-  LogOut,
-  Menu,
-  X,
-  Egg,
   BarChart3,
+  CalendarDays,
+  ChefHat,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  Package,
+  Receipt,
+  Settings,
+  Store,
+  Tags,
+  Users,
+  Warehouse,
+  X,
 } from 'lucide-react';
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
+import { Logo } from '@/components/brand/logo';
+import type { Business } from '@/types';
 
-const sidebarLinks = [
+/** Navegación principal: el orden es el del recorrido diario del negocio. */
+const PRIMARY_LINKS = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/pedidos', label: 'Pedidos', icon: ClipboardList },
+  { href: '/admin/calendario', label: 'Calendario', icon: CalendarDays },
+  { href: '/admin/clientes', label: 'Clientes', icon: Users },
   { href: '/admin/productos', label: 'Productos', icon: Package },
-  { href: '/admin/paquetes', label: 'Paquetes', icon: BoxesIcon },
-  { href: '/admin/categorias', label: 'Categorías', icon: TagIcon },
-  { href: '/admin/ingredientes', label: 'Ingredientes', icon: Egg },
-  { href: '/admin/inventario', label: 'Inventario', icon: BarChart3 },
+  { href: '/admin/stock', label: 'Stock', icon: Warehouse },
+  { href: '/admin/gastos', label: 'Gastos', icon: Receipt },
+  { href: '/admin/estadisticas', label: 'Estadísticas', icon: BarChart3 },
+];
+
+const SECONDARY_LINKS = [
+  { href: '/admin/combos', label: 'Combos', icon: ChefHat },
+  { href: '/admin/categorias', label: 'Categorías', icon: Tags },
   { href: '/admin/configuracion', label: 'Configuración', icon: Settings },
 ];
 
-export function AdminSidebar() {
+export function AdminSidebar({
+  business,
+  open,
+  onClose,
+}: {
+  business: Business | null;
+  open: boolean;
+  onClose: () => void;
+}) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const isActive = (href: string) =>
+    href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -42,41 +63,73 @@ export function AdminSidebar() {
     window.location.href = '/admin/login';
   };
 
-  const isActive = (href: string) => {
-    if (href === '/admin') return pathname === '/admin';
-    return pathname.startsWith(href);
-  };
-
-  const nav = (
+  const content = (
     <>
-      <div className="flex items-center gap-2 px-4 py-6 border-b border-stone-200">
-        <span className="text-xl font-bold tracking-tight">COSOV.</span>
-        <span className="text-xs text-stone-400 font-medium">Admin</span>
+      <div className="flex items-center justify-between border-b border-stone-200 px-4 py-4">
+        <Link href="/admin" className="flex items-center">
+          <Logo size="sm" />
+        </Link>
+        <button
+          className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100 lg:hidden"
+          onClick={onClose}
+          aria-label="Cerrar menú"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
-      <nav className="flex-1 px-2 py-4 space-y-1">
-        {sidebarLinks.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            onClick={() => setMobileOpen(false)}
-            className={cn(
-              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              isActive(link.href)
-                ? 'bg-stone-100 text-stone-900'
-                : 'text-stone-500 hover:bg-stone-50 hover:text-stone-900'
+      {business && (
+        <div className="flex items-center gap-2.5 border-b border-stone-200 px-4 py-3">
+          {business.logo_url ? (
+            <Image
+              src={business.logo_url}
+              alt=""
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-lg object-cover"
+              unoptimized
+            />
+          ) : (
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-900 text-xs font-semibold text-white">
+              {business.name.slice(0, 2).toUpperCase()}
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-stone-900">{business.name}</p>
+            {business.industry && (
+              <p className="truncate text-xs text-stone-500">{business.industry}</p>
             )}
-          >
-            <link.icon className="h-4 w-4" />
-            {link.label}
-          </Link>
+          </div>
+        </div>
+      )}
+
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        {PRIMARY_LINKS.map((link) => (
+          <NavLink key={link.href} {...link} active={isActive(link.href)} />
+        ))}
+
+        <p className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+          Catálogo y ajustes
+        </p>
+        {SECONDARY_LINKS.map((link) => (
+          <NavLink key={link.href} {...link} active={isActive(link.href)} />
         ))}
       </nav>
 
-      <div className="border-t border-stone-200 p-2">
+      <div className="space-y-1 border-t border-stone-200 p-3">
+        {business?.storefront_enabled && (
+          <Link
+            href="/"
+            target="_blank"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
+          >
+            <Store className="h-4 w-4" />
+            Ver tienda
+          </Link>
+        )}
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-stone-500 hover:bg-stone-50 hover:text-stone-900 transition-colors"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
         >
           <LogOut className="h-4 w-4" />
           Cerrar sesión
@@ -87,32 +140,48 @@ export function AdminSidebar() {
 
   return (
     <>
-      {/* Mobile toggle */}
-      <button
-        className="lg:hidden fixed top-4 left-4 z-50 rounded-md bg-white p-2 shadow-md border border-stone-200"
-        onClick={() => setMobileOpen(!mobileOpen)}
-        aria-label="Menú admin"
-      >
-        {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-      </button>
-
-      {/* Mobile overlay */}
-      {mobileOpen && (
+      {open && (
         <div
-          className="lg:hidden fixed inset-0 z-40 bg-black/50"
-          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-stone-900/40 backdrop-blur-sm lg:hidden"
+          onClick={onClose}
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-stone-200 bg-white transition-transform lg:translate-x-0',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-stone-200 bg-white transition-transform duration-200 lg:translate-x-0',
+          open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        {nav}
+        {content}
       </aside>
     </>
+  );
+}
+
+function NavLink({
+  href,
+  label,
+  icon: Icon,
+  active,
+}: {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+        active
+          ? 'bg-brand-50 text-brand-800'
+          : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+      )}
+    >
+      <Icon className={cn('h-4 w-4', active ? 'text-brand-600' : 'text-stone-400')} />
+      {label}
+    </Link>
   );
 }

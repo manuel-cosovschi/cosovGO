@@ -11,12 +11,13 @@ export const productSchema = z.object({
     .union([z.number().nonnegative('El costo no puede ser negativo'), z.nan()])
     .optional()
     .nullable()
-    .transform((v) => (v == null || Number.isNaN(v) ? null : v)),
+    .transform((value) => (value == null || Number.isNaN(value) ? null : value)),
   image_url: z.string().url().optional().nullable(),
   gallery_urls: z.array(z.string().url()).optional(),
   sale_unit: z.string().default('unidad'),
   min_quantity: z.number().int().min(1).default(1),
   min_advance_hours: z.number().int().min(1).optional().nullable(),
+  batch_size: z.number().int().min(1).default(1),
   is_active: z.boolean().default(true),
 });
 

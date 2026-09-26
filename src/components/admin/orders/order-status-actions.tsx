@@ -1,80 +1,127 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { VALID_TRANSITIONS, ORDER_STATUS_LABELS, type OrderStatus } from '@/types';
-import { updateOrderStatus } from '@/actions/orders';
-import { approveOrderWithStockImpact } from '@/actions/inventory';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { updateOrderStatus } from '@/actions/orders';
+import { cn } from '@/lib/utils';
+import { ORDER_STATUS_LABELS, VALID_TRANSITIONS, type OrderStatus } from '@/types';
 
-interface OrderStatusActionsProps {
+/**
+ * Cambio de estado de un pedido.
+ *
+ * El siguiente estado natural se ofrece como acción principal; el resto de las
+ * transiciones válidas quedan como secundarias. Cancelar se separa del resto
+ * para que no se toque por error.
+ */
+export function OrderStatusActions({
+  orderId,
+  currentStatus,
+}: {
   orderId: string;
   currentStatus: OrderStatus;
-  onStatusChange?: () => void;
-}
-
-export function OrderStatusActions({ orderId, currentStatus, onStatusChange }: OrderStatusActionsProps) {
-  const [loading, setLoading] = useState<string | null>(null);
+}) {
   const router = useRouter();
-  const transitions = VALID_TRANSITIONS[currentStatus];
+  const [pending, setPending] = useState<OrderStatus | null>(null);
 
-  if (transitions.length === 0) return null;
+  const available = VALID_TRANSITIONS[currentStatus];
+  const forward = available.filter((status) => status !== 'cancelled');
+  const [next, ...rest] = forward;
 
-  const handleStatusChange = async (newStatus: OrderStatus) => {
-    setLoading(newStatus);
-    try {
-      // Use stock-aware approval when transitioning to 'approved'
-      if (newStatus === 'approved') {
-        const result = await approveOrderWithStockImpact(orderId);
-        if (result.success) {
-          toast.success('Pedido aprobado');
-          if (result.alerts && result.alerts.length > 0) {
-            result.alerts.forEach((alert) => toast.warning(alert, { duration: 8000 }));
-          }
-          onStatusChange?.();
-          router.refresh();
-        } else {
-          toast.error(result.error || 'Error al aprobar');
-        }
-      } else {
-        const result = await updateOrderStatus(orderId, newStatus);
-        if (result.success) {
-          toast.success(`Estado actualizado a "${ORDER_STATUS_LABELS[newStatus]}"`);
-          onStatusChange?.();
-          router.refresh();
-        } else {
-          toast.error(result.error || 'Error al cambiar estado');
-        }
-      }
-    } catch {
-      toast.error('Error al cambiar estado');
-    } finally {
-      setLoading(null);
+  const changeStatus = async (status: OrderStatus) => {
+    if (status === 'cancelled' && !confirm('¿Cancelar este pedido?')) return;
+
+    setPending(status);
+    const result = await updateOrderStatus(orderId, status);
+    setPending(null);
+
+    if (!result.success) {
+      toast.error(result.error || 'No se pudo cambiar el estado.');
+      return;
     }
+
+    toast.success(`Pedido marcado como "${ORDER_STATUS_LABELS[status]}"`);
+    // Las advertencias de stock no bloquean: el pedido ya cambió de estado.
+    result.warnings?.forEach((warning) => toast.warning(warning, { duration: 6000 }));
+    router.refresh();
   };
 
-  const getVariant = (status: OrderStatus) => {
-    if (status === 'approved' || status === 'delivered') return 'default' as const;
-    if (status === 'rejected' || status === 'cancelled') return 'destructive' as const;
-    return 'outline' as const;
-  };
+  if (available.length === 0) {
+    return (
+      <p className="text-sm text-stone-500">
+        Este pedido está cerrado: no admite más cambios de estado.
+      </p>
+    );
+  }
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {transitions.map((status) => (
-        <Button
+    <div className="flex flex-wrap items-center gap-2">
+      {next && (
+        <StatusButton
+          status={next}
+          variant="primary"
+          loading={pending === next}
+          disabled={pending !== null}
+          onClick={() => changeStatus(next)}
+        />
+      )}
+
+      {rest.map((status) => (
+        <StatusButton
           key={status}
-          variant={getVariant(status)}
-          size="sm"
-          disabled={loading !== null}
-          onClick={() => handleStatusChange(status)}
-        >
-          {loading === status && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-          {status === 'approved' ? 'Aprobar (con stock)' : ORDER_STATUS_LABELS[status]}
-        </Button>
+          status={status}
+          variant="secondary"
+          loading={pending === status}
+          disabled={pending !== null}
+          onClick={() => changeStatus(status)}
+        />
       ))}
+
+      {available.includes('cancelled') && (
+        <>
+          <span className="mx-1 hidden h-5 w-px bg-stone-200 sm:block" />
+          <StatusButton
+            status="cancelled"
+            variant="danger"
+            loading={pending === 'cancelled'}
+            disabled={pending !== null}
+            onClick={() => changeStatus('cancelled')}
+          />
+        </>
+      )}
     </div>
+  );
+}
+
+function StatusButton({
+  status,
+  variant,
+  loading,
+  disabled,
+  onClick,
+}: {
+  status: OrderStatus;
+  variant: 'primary' | 'secondary' | 'danger';
+  loading: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-medium transition-colors disabled:opacity-50',
+        variant === 'primary' && 'bg-stone-900 text-white hover:bg-stone-800',
+        variant === 'secondary' &&
+          'border border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50',
+        variant === 'danger' && 'text-rose-600 hover:bg-rose-50'
+      )}
+    >
+      {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+      {variant === 'primary' ? `Marcar como ${ORDER_STATUS_LABELS[status].toLowerCase()}` : ORDER_STATUS_LABELS[status]}
+    </button>
   );
 }

@@ -1,401 +1,371 @@
 'use server';
 
 import { createServerClient } from '@/lib/supabase/server';
-import { revalidatePath } from 'next/cache';
+import { requireBusinessId } from '@/lib/business';
+import { round2 } from '@/lib/utils';
 import type {
-  StockAlert,
   InventoryValuation,
   PurchaseSuggestion,
-  OrderTracking,
-  OrderStatus,
-  Ingredient,
+  StockAlert,
   StockMovement,
 } from '@/types';
-import { ORDER_STATUS_LABELS, VALID_TRANSITIONS } from '@/types';
-import { sendOrderStatusUpdate } from '@/lib/emails';
 
-// === Stock Alerts ===
+/**
+ * Análisis de stock: alertas, valorización, sugerencias de compra y el
+ * descuento automático al confirmar un pedido.
+ */
 
-export async function generateStockAlerts(): Promise<StockAlert[]> {
+// ============================================
+// Alertas
+// ============================================
+
+export async function generateStockAlerts(businessId?: string): Promise<StockAlert[]> {
+  const id = businessId || (await requireBusinessId());
   const supabase = await createServerClient();
   const alerts: StockAlert[] = [];
 
-  // Low ingredient stock
-  const { data: lowIngredients } = await supabase
-    .from('ingredients')
-    .select('id, name, stock_quantity, min_stock_quantity, unit')
-    .eq('is_active', true)
-    .filter('stock_quantity', 'lt', 'min_stock_quantity' as unknown as number);
+  // Postgres no compara dos columnas desde el query builder, así que traemos
+  // los activos (son pocas filas) y comparamos en memoria.
+  const [{ data: ingredients }, { data: products }, { data: recipes }] = await Promise.all([
+    supabase
+      .from('ingredients')
+      .select('id, name, stock_quantity, min_stock_quantity, unit')
+      .eq('business_id', id)
+      .eq('is_active', true),
+    supabase
+      .from('products')
+      .select('id, name, stock_quantity, min_stock_quantity, sale_unit, cost_override')
+      .eq('business_id', id)
+      .eq('is_active', true),
+    supabase.from('recipe_items').select('product_id'),
+  ]);
 
-  // Supabase can't do column-to-column comparison in .filter, so we filter in JS
-  const { data: allIngredients } = await supabase
-    .from('ingredients')
-    .select('id, name, stock_quantity, min_stock_quantity, unit')
-    .eq('is_active', true);
-
-  if (allIngredients) {
-    for (const ing of allIngredients) {
-      if (ing.stock_quantity < ing.min_stock_quantity) {
-        alerts.push({
-          type: 'low_ingredient',
-          severity: ing.stock_quantity <= 0 ? 'critical' : 'warning',
-          message: `${ing.name}: ${ing.stock_quantity} ${ing.unit} (mín: ${ing.min_stock_quantity})`,
-          reference_id: ing.id,
-          reference_name: ing.name,
-        });
-      }
+  for (const ingredient of ingredients || []) {
+    if (Number(ingredient.stock_quantity) < Number(ingredient.min_stock_quantity)) {
+      alerts.push({
+        type: 'low_ingredient',
+        severity: Number(ingredient.stock_quantity) <= 0 ? 'critical' : 'warning',
+        message: `${ingredient.name}: quedan ${formatQty(ingredient.stock_quantity)} ${ingredient.unit} (mínimo ${formatQty(ingredient.min_stock_quantity)})`,
+        reference_id: ingredient.id,
+        reference_name: ingredient.name,
+      });
     }
   }
 
-  // Low product stock
-  const { data: allProducts } = await supabase
-    .from('products')
-    .select('id, name, stock_quantity, min_stock_quantity, sale_unit')
-    .eq('is_active', true);
-
-  if (allProducts) {
-    for (const prod of allProducts) {
-      if (prod.stock_quantity < prod.min_stock_quantity) {
-        alerts.push({
-          type: 'low_product',
-          severity: prod.stock_quantity <= 0 ? 'critical' : 'warning',
-          message: `${prod.name}: ${prod.stock_quantity} ${prod.sale_unit} (mín: ${prod.min_stock_quantity})`,
-          reference_id: prod.id,
-          reference_name: prod.name,
-        });
-      }
+  for (const product of products || []) {
+    if (
+      Number(product.min_stock_quantity) > 0 &&
+      Number(product.stock_quantity) < Number(product.min_stock_quantity)
+    ) {
+      alerts.push({
+        type: 'low_product',
+        severity: Number(product.stock_quantity) <= 0 ? 'critical' : 'warning',
+        message: `${product.name}: quedan ${product.stock_quantity} ${product.sale_unit} (mínimo ${product.min_stock_quantity})`,
+        reference_id: product.id,
+        reference_name: product.name,
+      });
     }
   }
 
-  // Products without recipe
-  const { data: productsWithoutRecipe } = await supabase
-    .from('products')
-    .select('id, name')
-    .eq('is_active', true);
-
-  const { data: productsWithRecipe } = await supabase
-    .from('recipe_items')
-    .select('product_id');
-
-  if (productsWithoutRecipe && productsWithRecipe) {
-    const withRecipeIds = new Set(productsWithRecipe.map((r) => r.product_id));
-    for (const prod of productsWithoutRecipe) {
-      if (!withRecipeIds.has(prod.id)) {
-        alerts.push({
-          type: 'missing_recipe',
-          severity: 'warning',
-          message: `${prod.name} no tiene receta cargada`,
-          reference_id: prod.id,
-          reference_name: prod.name,
-        });
-      }
+  // Un producto sin receta ni costo cargado no aporta margen real a las estadísticas.
+  const withRecipe = new Set((recipes || []).map((r) => r.product_id));
+  for (const product of products || []) {
+    if (!withRecipe.has(product.id) && !product.cost_override) {
+      alerts.push({
+        type: 'missing_recipe',
+        severity: 'warning',
+        message: `${product.name} no tiene costo cargado: su margen no se calcula`,
+        reference_id: product.id,
+        reference_name: product.name,
+      });
     }
   }
 
   return alerts;
 }
 
-// === Inventory Valuation ===
+// ============================================
+// Valorización
+// ============================================
 
-export async function getInventoryValuation(): Promise<InventoryValuation> {
+export async function getInventoryValuation(businessId?: string): Promise<InventoryValuation> {
+  const id = businessId || (await requireBusinessId());
   const supabase = await createServerClient();
 
-  // Ingredient value: sum(stock_quantity * cost_per_unit)
-  const { data: ingredients } = await supabase
-    .from('ingredients')
-    .select('stock_quantity, cost_per_unit')
-    .eq('is_active', true);
+  const [{ data: ingredients }, { data: products }, { data: recipes }] = await Promise.all([
+    supabase
+      .from('ingredients')
+      .select('stock_quantity, cost_per_unit')
+      .eq('business_id', id)
+      .eq('is_active', true),
+    supabase
+      .from('products')
+      .select('id, stock_quantity, cost_override, batch_size')
+      .eq('business_id', id)
+      .eq('is_active', true),
+    supabase.from('recipe_items').select('product_id, quantity_per_batch, ingredient:ingredients(cost_per_unit)'),
+  ]);
 
   const ingredientsValue = (ingredients || []).reduce(
-    (sum, ing) => sum + ing.stock_quantity * ing.cost_per_unit,
+    (sum, item) => sum + Number(item.stock_quantity) * Number(item.cost_per_unit),
     0
   );
 
-  // Product value: estimated cost from recipe or cost_override
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, stock_quantity, cost_override, batch_size')
-    .eq('is_active', true);
+  // Costo por lote de cada producto, resuelto de una sola pasada sobre las recetas
+  const batchCost = new Map<string, number>();
+  for (const item of recipes || []) {
+    const ingredient = item.ingredient as unknown as { cost_per_unit: number } | null;
+    batchCost.set(
+      item.product_id,
+      (batchCost.get(item.product_id) || 0) +
+        Number(item.quantity_per_batch) * Number(ingredient?.cost_per_unit || 0)
+    );
+  }
 
   let productsValue = 0;
+  for (const product of products || []) {
+    const stock = Number(product.stock_quantity);
+    if (stock <= 0) continue;
 
-  if (products) {
-    for (const prod of products) {
-      if (prod.stock_quantity <= 0) continue;
-
-      if (prod.cost_override) {
-        productsValue += prod.stock_quantity * prod.cost_override;
-      } else {
-        // Calculate from recipe
-        const { data: recipe } = await supabase
-          .from('recipe_items')
-          .select('quantity_per_batch, ingredient:ingredients(cost_per_unit)')
-          .eq('product_id', prod.id);
-
-        if (recipe && recipe.length > 0) {
-          const batchCost = recipe.reduce((sum, item) => {
-            const ingredient = item.ingredient as unknown as { cost_per_unit: number };
-            return sum + item.quantity_per_batch * (ingredient?.cost_per_unit || 0);
-          }, 0);
-          const unitCost = batchCost / (prod.batch_size || 1);
-          productsValue += prod.stock_quantity * unitCost;
-        }
-      }
+    if (product.cost_override) {
+      productsValue += stock * Number(product.cost_override);
+    } else {
+      const cost = batchCost.get(product.id);
+      if (cost) productsValue += stock * (cost / (product.batch_size || 1));
     }
   }
 
-  // Committed cost: approved/active/in_production orders
-  const { data: committedOrders } = await supabase
-    .from('orders')
-    .select('subtotal')
-    .in('status', ['approved', 'active', 'in_production']);
-
-  const committedCost = (committedOrders || []).reduce(
-    (sum, order) => sum + (order.subtotal || 0),
-    0
-  );
-
   return {
-    ingredients_value: Math.round(ingredientsValue * 100) / 100,
-    products_value: Math.round(productsValue * 100) / 100,
-    committed_cost: Math.round(committedCost * 100) / 100,
-    total_value: Math.round((ingredientsValue + productsValue) * 100) / 100,
+    ingredients_value: round2(ingredientsValue),
+    products_value: round2(productsValue),
+    total_value: round2(ingredientsValue + productsValue),
   };
 }
 
-// === Purchase Suggestions ===
+// ============================================
+// Sugerencias de compra
+// ============================================
 
 export async function getPurchaseSuggestions(): Promise<PurchaseSuggestion[]> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
 
   const { data: ingredients } = await supabase
     .from('ingredients')
     .select('id, name, unit, stock_quantity, min_stock_quantity, cost_per_unit')
+    .eq('business_id', businessId)
     .eq('is_active', true);
 
-  if (!ingredients) return [];
-
-  return ingredients
-    .filter((ing) => ing.stock_quantity < ing.min_stock_quantity)
-    .map((ing) => ({
-      ingredient_id: ing.id,
-      ingredient_name: ing.name,
-      unit: ing.unit,
-      current_stock: ing.stock_quantity,
-      needed: ing.min_stock_quantity,
-      to_buy: Math.max(0, ing.min_stock_quantity - ing.stock_quantity),
-      estimated_cost:
-        Math.round(Math.max(0, ing.min_stock_quantity - ing.stock_quantity) * ing.cost_per_unit * 100) / 100,
-    }))
+  return (ingredients || [])
+    .filter((item) => Number(item.stock_quantity) < Number(item.min_stock_quantity))
+    .map((item) => {
+      const toBuy = Math.max(0, Number(item.min_stock_quantity) - Number(item.stock_quantity));
+      return {
+        ingredient_id: item.id,
+        ingredient_name: item.name,
+        unit: item.unit,
+        current_stock: Number(item.stock_quantity),
+        needed: Number(item.min_stock_quantity),
+        to_buy: round2(toBuy),
+        estimated_cost: round2(toBuy * Number(item.cost_per_unit)),
+      };
+    })
     .sort((a, b) => b.estimated_cost - a.estimated_cost);
 }
 
-// === Stock Deduction on Order Approval ===
+// ============================================
+// Descuento de stock al confirmar un pedido
+// ============================================
 
-export async function approveOrderWithStockImpact(
-  orderId: string,
-  notes?: string
-): Promise<{ success: boolean; alerts?: string[]; error?: string }> {
+/**
+ * Descuenta del stock lo que consume un pedido.
+ *
+ * Primero usa producto terminado; lo que falte se produce, y esa producción
+ * consume insumos según la receta. Cada paso queda registrado en
+ * `stock_movements`, así que el stock siempre se puede reconstruir.
+ *
+ * No falla el pedido si el stock no alcanza: devuelve avisos. Un negocio chico
+ * carga un pedido y produce después — bloquearlo sería pelearse con la realidad.
+ */
+export async function applyStockForOrder(
+  businessId: string,
+  orderId: string
+): Promise<{ success: boolean; warnings?: string[] }> {
   const supabase = await createServerClient();
-  const alerts: string[] = [];
+  const warnings: string[] = [];
 
-  // Get order with items
   const { data: order } = await supabase
     .from('orders')
-    .select('id, status, email, contact_name, order_number')
+    .select('id, order_number')
     .eq('id', orderId)
-    .single();
+    .eq('business_id', businessId)
+    .maybeSingle();
 
-  if (!order) return { success: false, error: 'Pedido no encontrado.' };
-
-  const currentStatus = order.status as OrderStatus;
-  if (!VALID_TRANSITIONS[currentStatus].includes('approved')) {
-    return {
-      success: false,
-      error: `No se puede aprobar un pedido en estado "${ORDER_STATUS_LABELS[currentStatus]}".`,
-    };
-  }
+  if (!order) return { success: false };
 
   const { data: items } = await supabase
     .from('order_items')
-    .select('*')
+    .select('product_id, package_id, item_name, quantity')
     .eq('order_id', orderId);
 
-  if (!items || items.length === 0) {
-    return { success: false, error: 'El pedido no tiene items.' };
-  }
+  if (!items?.length) return { success: true };
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Process each item
-  for (const item of items) {
-    if (!item.product_id) continue; // Skip packages for now (simplified)
+  // Un combo consume los productos que lo componen
+  const lines: { product_id: string; quantity: number }[] = [];
+  const packageIds = items.filter((i) => i.package_id).map((i) => i.package_id!);
 
-    // Get product stock
-    const { data: product } = await supabase
-      .from('products')
-      .select('id, name, stock_quantity, batch_size')
-      .eq('id', item.product_id)
-      .single();
+  if (packageIds.length > 0) {
+    const { data: packageItems } = await supabase
+      .from('package_items')
+      .select('package_id, product_id, quantity')
+      .in('package_id', packageIds);
 
-    if (!product) continue;
-
-    const needed = item.quantity;
-    const available = product.stock_quantity;
-    const useElaborated = Math.min(available, needed);
-
-    // Deduct from finished product stock
-    if (useElaborated > 0) {
-      await supabase
-        .from('products')
-        .update({ stock_quantity: available - useElaborated })
-        .eq('id', product.id);
-
-      await supabase.from('stock_movements').insert({
-        reference_type: 'product',
-        reference_id: product.id,
-        movement_type: 'order_deduction',
-        quantity: -useElaborated,
-        order_id: orderId,
-        notes: `Pedido #${order.order_number}: ${useElaborated} ${item.item_name}`,
-        created_by: user?.id || null,
-      });
-    }
-
-    const remaining = needed - useElaborated;
-
-    if (remaining > 0) {
-      // Get recipe
-      const { data: recipe } = await supabase
-        .from('recipe_items')
-        .select('*, ingredient:ingredients(*)')
-        .eq('product_id', product.id);
-
-      if (recipe && recipe.length > 0) {
-        const batchSize = product.batch_size || 1;
-        const batchesNeeded = Math.ceil(remaining / batchSize);
-
-        for (const recipeItem of recipe) {
-          const ingredient = recipeItem.ingredient as Ingredient;
-          const consumption = recipeItem.quantity_per_batch * batchesNeeded;
-          const newStock = ingredient.stock_quantity - consumption;
-
-          await supabase
-            .from('ingredients')
-            .update({ stock_quantity: newStock })
-            .eq('id', recipeItem.ingredient_id);
-
-          await supabase.from('stock_movements').insert({
-            reference_type: 'ingredient',
-            reference_id: recipeItem.ingredient_id,
-            movement_type: 'production_consumption',
-            quantity: -consumption,
-            order_id: orderId,
-            notes: `Pedido #${order.order_number}: ${batchesNeeded} lote(s) de ${product.name}`,
-            created_by: user?.id || null,
+    for (const item of items) {
+      if (!item.package_id) continue;
+      for (const packageItem of packageItems || []) {
+        if (packageItem.package_id === item.package_id) {
+          lines.push({
+            product_id: packageItem.product_id,
+            quantity: packageItem.quantity * item.quantity,
           });
-
-          if (newStock < 0) {
-            alerts.push(
-              `Faltante: ${ingredient.name} — stock negativo (${newStock.toFixed(2)} ${ingredient.unit})`
-            );
-          } else if (newStock < ingredient.min_stock_quantity) {
-            alerts.push(
-              `Stock bajo: ${ingredient.name} — quedan ${newStock.toFixed(2)} ${ingredient.unit}`
-            );
-          }
         }
-      } else {
-        alerts.push(`${product.name}: sin receta cargada. No se descontaron ingredientes.`);
       }
     }
   }
 
-  // Update order status to approved
-  const { error } = await supabase
-    .from('orders')
-    .update({ status: 'approved' })
-    .eq('id', orderId);
+  for (const item of items) {
+    if (item.product_id) lines.push({ product_id: item.product_id, quantity: item.quantity });
+  }
 
-  if (error) return { success: false, error: 'Error al aprobar el pedido.' };
+  // Consolidamos por producto para no hacer dos updates sobre la misma fila
+  const needByProduct = new Map<string, number>();
+  for (const line of lines) {
+    needByProduct.set(line.product_id, (needByProduct.get(line.product_id) || 0) + line.quantity);
+  }
+  if (needByProduct.size === 0) return { success: true };
 
-  // Log status change
-  await supabase.from('order_status_history').insert({
-    order_id: orderId,
-    from_status: currentStatus,
-    to_status: 'approved',
-    changed_by: user?.id || null,
-    notes: notes || (alerts.length > 0 ? `Aprobado con alertas: ${alerts.join('; ')}` : null),
-  });
+  const { data: products } = await supabase
+    .from('products')
+    .select('id, name, stock_quantity, batch_size')
+    .eq('business_id', businessId)
+    .in('id', Array.from(needByProduct.keys()));
 
-  // Notify client
-  sendOrderStatusUpdate(order.email, {
-    contactName: order.contact_name,
-    orderNumber: order.order_number,
-    newStatus: 'approved' as OrderStatus,
-    notes: notes || undefined,
-  }).catch(console.error);
+  const { data: recipes } = await supabase
+    .from('recipe_items')
+    .select('product_id, ingredient_id, quantity_per_batch, ingredient:ingredients(id, name, unit, stock_quantity, min_stock_quantity)')
+    .in('product_id', Array.from(needByProduct.keys()));
 
-  revalidatePath('/admin/pedidos');
-  revalidatePath(`/admin/pedidos/${orderId}`);
-  revalidatePath('/admin');
-  revalidatePath('/admin/ingredientes');
+  // Consumo total por insumo, para actualizar cada uno una sola vez
+  const ingredientConsumption = new Map<
+    string,
+    { consumption: number; name: string; unit: string; stock: number; min: number }
+  >();
 
-  return { success: true, alerts: alerts.length > 0 ? alerts : undefined };
+  for (const product of products || []) {
+    const needed = needByProduct.get(product.id) || 0;
+    const available = Number(product.stock_quantity);
+    const fromStock = Math.min(Math.max(available, 0), needed);
+
+    if (fromStock > 0) {
+      await supabase
+        .from('products')
+        .update({ stock_quantity: available - fromStock })
+        .eq('id', product.id);
+
+      await supabase.from('stock_movements').insert({
+        business_id: businessId,
+        reference_type: 'product',
+        reference_id: product.id,
+        movement_type: 'order_deduction',
+        quantity: -fromStock,
+        order_id: orderId,
+        notes: `Pedido #${order.order_number}: ${fromStock} × ${product.name}`,
+        created_by: user?.id || null,
+      });
+    }
+
+    const toProduce = needed - fromStock;
+    if (toProduce <= 0) continue;
+
+    const productRecipe = (recipes || []).filter((r) => r.product_id === product.id);
+    if (productRecipe.length === 0) {
+      warnings.push(`${product.name}: sin receta cargada, no se descontaron insumos.`);
+      continue;
+    }
+
+    const batches = Math.ceil(toProduce / (product.batch_size || 1));
+    for (const recipeItem of productRecipe) {
+      const ingredient = recipeItem.ingredient as unknown as {
+        id: string;
+        name: string;
+        unit: string;
+        stock_quantity: number;
+        min_stock_quantity: number;
+      } | null;
+      if (!ingredient) continue;
+
+      const entry = ingredientConsumption.get(ingredient.id) || {
+        consumption: 0,
+        name: ingredient.name,
+        unit: ingredient.unit,
+        stock: Number(ingredient.stock_quantity),
+        min: Number(ingredient.min_stock_quantity),
+      };
+      entry.consumption += Number(recipeItem.quantity_per_batch) * batches;
+      ingredientConsumption.set(ingredient.id, entry);
+    }
+  }
+
+  for (const [ingredientId, entry] of ingredientConsumption) {
+    const newStock = round2(entry.stock - entry.consumption);
+
+    await supabase
+      .from('ingredients')
+      .update({ stock_quantity: newStock })
+      .eq('id', ingredientId);
+
+    await supabase.from('stock_movements').insert({
+      business_id: businessId,
+      reference_type: 'ingredient',
+      reference_id: ingredientId,
+      movement_type: 'production_consumption',
+      quantity: -round2(entry.consumption),
+      order_id: orderId,
+      notes: `Pedido #${order.order_number}`,
+      created_by: user?.id || null,
+    });
+
+    if (newStock < 0) {
+      warnings.push(`${entry.name}: stock negativo (${newStock} ${entry.unit}). Reponé antes de producir.`);
+    } else if (newStock < entry.min) {
+      warnings.push(`${entry.name}: quedó bajo el mínimo (${newStock} ${entry.unit}).`);
+    }
+  }
+
+  return { success: true, warnings: warnings.length > 0 ? warnings : undefined };
 }
 
-// === Order Tracking (Public) ===
+// ============================================
+// Movimientos
+// ============================================
 
-export async function getOrderTracking(orderNumber: number): Promise<OrderTracking | null> {
-  const supabase = await createServerClient();
-
-  const { data: order } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('order_number', orderNumber)
-    .single();
-
-  if (!order) return null;
-
-  const [{ data: items }, { data: history }] = await Promise.all([
-    supabase.from('order_items').select('item_name, quantity, unit_price, subtotal').eq('order_id', order.id),
-    supabase
-      .from('order_status_history')
-      .select('to_status, created_at, notes')
-      .eq('order_id', order.id)
-      .order('created_at'),
-  ]);
-
-  return {
-    order_number: order.order_number,
-    status: order.status as OrderStatus,
-    business_name: order.business_name,
-    delivery_date: order.delivery_date,
-    delivery_method: order.delivery_method,
-    items: (items || []).map((i) => ({
-      name: i.item_name,
-      quantity: i.quantity,
-      unit_price: i.unit_price,
-      subtotal: i.subtotal,
-    })),
-    subtotal: order.subtotal,
-    timeline: (history || []).map((h) => ({
-      status: h.to_status,
-      date: h.created_at,
-      notes: h.notes,
-    })),
-    created_at: order.created_at,
-  };
-}
-
-// === Recent Stock Movements ===
-
-export async function getRecentMovements(limit = 20): Promise<(StockMovement & { reference_name?: string })[]> {
+export async function getRecentMovements(limit = 25): Promise<StockMovement[]> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
   const { data } = await supabase
     .from('stock_movements')
     .select('*')
+    .eq('business_id', businessId)
     .order('created_at', { ascending: false })
     .limit(limit);
   return (data as StockMovement[]) || [];
+}
+
+function formatQty(value: number | string): string {
+  const num = Number(value);
+  return Number.isInteger(num) ? String(num) : num.toFixed(2);
 }

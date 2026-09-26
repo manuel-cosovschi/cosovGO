@@ -61,8 +61,6 @@ export function RecipeManager({
     setSaving(false);
   };
 
-  const getIngredientName = (id: string) =>
-    availableIngredients.find((i) => i.id === id)?.name || 'Desconocido';
   const getIngredientUnit = (id: string) =>
     availableIngredients.find((i) => i.id === id)?.unit || '';
 

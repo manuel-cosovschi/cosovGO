@@ -1,15 +1,22 @@
-import { Badge } from '@/components/ui/badge';
-import { ORDER_STATUS_LABELS, ORDER_STATUS_COLORS, type OrderStatus } from '@/types';
 import { cn } from '@/lib/utils';
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS, type OrderStatus } from '@/types';
 
-interface OrderStatusBadgeProps {
+export function OrderStatusBadge({
+  status,
+  className,
+}: {
   status: OrderStatus;
-}
-
-export function OrderStatusBadge({ status }: OrderStatusBadgeProps) {
+  className?: string;
+}) {
   return (
-    <Badge variant="secondary" className={cn(ORDER_STATUS_COLORS[status])}>
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset',
+        ORDER_STATUS_COLORS[status],
+        className
+      )}
+    >
       {ORDER_STATUS_LABELS[status]}
-    </Badge>
+    </span>
   );
 }
