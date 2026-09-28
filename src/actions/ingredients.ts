@@ -1,63 +1,81 @@
 'use server';
 
-import { createServerClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { createServerClient } from '@/lib/supabase/server';
+import { requireBusinessId } from '@/lib/business';
 import type {
-  Ingredient,
   CreateIngredientInput,
-  UpdateIngredientInput,
-  StockAdjustment,
+  Ingredient,
   RecipeItem,
+  StockAdjustment,
   StockMovement,
+  UpdateIngredientInput,
 } from '@/types';
 
-// === Ingredients CRUD ===
+// ============================================
+// Insumos
+// ============================================
 
-export async function listIngredients(onlyActive?: boolean): Promise<Ingredient[]> {
+export async function listIngredients(onlyActive = false): Promise<Ingredient[]> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
-  let query = supabase.from('ingredients').select('*').order('name');
+
+  let query = supabase
+    .from('ingredients')
+    .select('*')
+    .eq('business_id', businessId)
+    .order('name');
+
   if (onlyActive) query = query.eq('is_active', true);
+
   const { data } = await query;
   return (data as Ingredient[]) || [];
 }
 
-export async function getIngredientById(id: string): Promise<Ingredient | null> {
+export async function getIngredient(id: string): Promise<Ingredient | null> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
-  const { data } = await supabase.from('ingredients').select('*').eq('id', id).single();
-  return data as Ingredient | null;
+  const { data } = await supabase
+    .from('ingredients')
+    .select('*')
+    .eq('id', id)
+    .eq('business_id', businessId)
+    .maybeSingle();
+  return (data as Ingredient) || null;
 }
 
-export async function createIngredient(input: CreateIngredientInput): Promise<{
-  success: boolean;
-  ingredient?: Ingredient;
-  error?: string;
-}> {
+export async function createIngredient(
+  input: CreateIngredientInput
+): Promise<{ success: boolean; ingredient?: Ingredient; error?: string }> {
+  if (!input.name?.trim()) return { success: false, error: 'El nombre es obligatorio.' };
+
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
 
   const { data, error } = await supabase
     .from('ingredients')
     .insert({
-      name: input.name,
-      unit: input.unit,
+      business_id: businessId,
+      name: input.name.trim(),
+      unit: input.unit || 'unidad',
+      category: input.category?.trim() || null,
       stock_quantity: input.stock_quantity ?? 0,
       min_stock_quantity: input.min_stock_quantity ?? 0,
       cost_per_unit: input.cost_per_unit ?? 0,
-      supplier: input.supplier || null,
-      notes: input.notes || null,
+      supplier: input.supplier?.trim() || null,
+      notes: input.notes?.trim() || null,
     })
     .select()
     .single();
 
-  if (error) {
-    if (error.code === '23505') {
-      return { success: false, error: 'Ya existe un ingrediente con ese nombre.' };
-    }
-    return { success: false, error: 'Error al crear el ingrediente.' };
+  if (error || !data) {
+    if (error?.code === '23505') return { success: false, error: 'Ya existe un insumo con ese nombre.' };
+    return { success: false, error: 'No se pudo crear el insumo.' };
   }
 
-  // Log initial stock if > 0
   if ((input.stock_quantity ?? 0) > 0) {
     await supabase.from('stock_movements').insert({
+      business_id: businessId,
       reference_type: 'ingredient',
       reference_id: data.id,
       movement_type: 'adjustment',
@@ -67,8 +85,7 @@ export async function createIngredient(input: CreateIngredientInput): Promise<{
     });
   }
 
-  revalidatePath('/admin/ingredientes');
-  revalidatePath('/admin');
+  revalidateStockViews();
   return { success: true, ingredient: data as Ingredient };
 }
 
@@ -76,93 +93,121 @@ export async function updateIngredient(
   id: string,
   input: UpdateIngredientInput
 ): Promise<{ success: boolean; error?: string }> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
 
-  const { error } = await supabase.from('ingredients').update(input).eq('id', id);
+  const { error } = await supabase
+    .from('ingredients')
+    .update(input)
+    .eq('id', id)
+    .eq('business_id', businessId);
 
   if (error) {
-    if (error.code === '23505') {
-      return { success: false, error: 'Ya existe un ingrediente con ese nombre.' };
-    }
-    return { success: false, error: 'Error al actualizar el ingrediente.' };
+    if (error.code === '23505') return { success: false, error: 'Ya existe un insumo con ese nombre.' };
+    return { success: false, error: 'No se pudo actualizar el insumo.' };
   }
 
-  revalidatePath('/admin/ingredientes');
-  revalidatePath(`/admin/ingredientes/${id}`);
+  revalidateStockViews(id);
   return { success: true };
 }
 
+export async function deleteIngredient(id: string): Promise<{ success: boolean; error?: string }> {
+  const businessId = await requireBusinessId();
+  const supabase = await createServerClient();
+
+  const { error } = await supabase
+    .from('ingredients')
+    .delete()
+    .eq('id', id)
+    .eq('business_id', businessId);
+
+  if (error) return { success: false, error: 'No se pudo eliminar el insumo.' };
+
+  revalidateStockViews();
+  return { success: true };
+}
+
+/** Fija el stock a un valor y deja el movimiento de ajuste correspondiente. */
 export async function adjustIngredientStock(
   id: string,
   adjustment: StockAdjustment
 ): Promise<{ success: boolean; error?: string }> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
 
   const { data: ingredient } = await supabase
     .from('ingredients')
     .select('stock_quantity')
     .eq('id', id)
-    .single();
+    .eq('business_id', businessId)
+    .maybeSingle();
 
-  if (!ingredient) return { success: false, error: 'Ingrediente no encontrado.' };
+  if (!ingredient) return { success: false, error: 'Insumo no encontrado.' };
 
-  const diff = adjustment.new_quantity - ingredient.stock_quantity;
+  const diff = adjustment.new_quantity - Number(ingredient.stock_quantity);
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // Update stock
   const { error } = await supabase
     .from('ingredients')
     .update({ stock_quantity: adjustment.new_quantity })
     .eq('id', id);
 
-  if (error) return { success: false, error: 'Error al ajustar stock.' };
+  if (error) return { success: false, error: 'No se pudo ajustar el stock.' };
 
-  // Log movement
   await supabase.from('stock_movements').insert({
+    business_id: businessId,
     reference_type: 'ingredient',
     reference_id: id,
     movement_type: 'adjustment',
     quantity: diff,
-    notes: adjustment.notes,
+    notes: adjustment.notes || 'Ajuste manual',
     created_by: user?.id || null,
   });
 
-  revalidatePath('/admin/ingredientes');
-  revalidatePath(`/admin/ingredientes/${id}`);
-  revalidatePath('/admin');
+  revalidateStockViews(id);
   return { success: true };
 }
 
+/** Suma stock y actualiza el costo unitario al precio de la compra. */
 export async function registerPurchase(
   ingredientId: string,
   quantity: number,
   unitCost: number,
   notes?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  if (quantity <= 0) return { success: false, error: 'La cantidad tiene que ser mayor a cero.' };
 
-  // Update stock and cost
+  const businessId = await requireBusinessId();
+  const supabase = await createServerClient();
+
   const { data: ingredient } = await supabase
     .from('ingredients')
     .select('stock_quantity')
     .eq('id', ingredientId)
-    .single();
+    .eq('business_id', businessId)
+    .maybeSingle();
 
-  if (!ingredient) return { success: false, error: 'Ingrediente no encontrado.' };
+  if (!ingredient) return { success: false, error: 'Insumo no encontrado.' };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { error } = await supabase
     .from('ingredients')
     .update({
-      stock_quantity: ingredient.stock_quantity + quantity,
+      stock_quantity: Number(ingredient.stock_quantity) + quantity,
       cost_per_unit: unitCost,
     })
     .eq('id', ingredientId);
 
-  if (error) return { success: false, error: 'Error al registrar compra.' };
+  if (error) return { success: false, error: 'No se pudo registrar la compra.' };
 
   await supabase.from('stock_movements').insert({
+    business_id: businessId,
     reference_type: 'ingredient',
     reference_id: ingredientId,
     movement_type: 'purchase',
@@ -172,13 +217,30 @@ export async function registerPurchase(
     created_by: user?.id || null,
   });
 
-  revalidatePath('/admin/ingredientes');
-  revalidatePath(`/admin/ingredientes/${ingredientId}`);
-  revalidatePath('/admin');
+  revalidateStockViews(ingredientId);
   return { success: true };
 }
 
-// === Recipes ===
+export async function getIngredientMovements(
+  ingredientId: string,
+  limit = 30
+): Promise<StockMovement[]> {
+  const businessId = await requireBusinessId();
+  const supabase = await createServerClient();
+  const { data } = await supabase
+    .from('stock_movements')
+    .select('*')
+    .eq('business_id', businessId)
+    .eq('reference_type', 'ingredient')
+    .eq('reference_id', ingredientId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  return (data as StockMovement[]) || [];
+}
+
+// ============================================
+// Recetas
+// ============================================
 
 export async function getProductRecipe(productId: string): Promise<RecipeItem[]> {
   const supabase = await createServerClient();
@@ -194,161 +256,41 @@ export async function saveProductRecipe(
   batchSize: number,
   items: { ingredient_id: string; quantity_per_batch: number }[]
 ): Promise<{ success: boolean; error?: string }> {
-  const supabase = await createServerClient();
-
-  // Update batch_size on product
-  await supabase.from('products').update({ batch_size: batchSize }).eq('id', productId);
-
-  // Delete existing recipe items
-  await supabase.from('recipe_items').delete().eq('product_id', productId);
-
-  // Insert new recipe items
-  if (items.length > 0) {
-    const { error } = await supabase.from('recipe_items').insert(
-      items.map((item) => ({
-        product_id: productId,
-        ingredient_id: item.ingredient_id,
-        quantity_per_batch: item.quantity_per_batch,
-      }))
-    );
-    if (error) return { success: false, error: 'Error al guardar la receta.' };
-  }
-
-  revalidatePath(`/admin/productos/${productId}`);
-  return { success: true };
-}
-
-// === Product Stock ===
-
-export async function adjustProductStock(
-  productId: string,
-  adjustment: StockAdjustment
-): Promise<{ success: boolean; error?: string }> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
 
   const { data: product } = await supabase
     .from('products')
-    .select('stock_quantity')
+    .select('id')
     .eq('id', productId)
-    .single();
+    .eq('business_id', businessId)
+    .maybeSingle();
 
   if (!product) return { success: false, error: 'Producto no encontrado.' };
 
-  const diff = adjustment.new_quantity - product.stock_quantity;
-  const { data: { user } } = await supabase.auth.getUser();
-
-  const { error } = await supabase
-    .from('products')
-    .update({ stock_quantity: adjustment.new_quantity })
-    .eq('id', productId);
-
-  if (error) return { success: false, error: 'Error al ajustar stock.' };
-
-  await supabase.from('stock_movements').insert({
-    reference_type: 'product',
-    reference_id: productId,
-    movement_type: 'adjustment',
-    quantity: diff,
-    notes: adjustment.notes,
-    created_by: user?.id || null,
-  });
-
-  revalidatePath(`/admin/productos/${productId}`);
-  revalidatePath('/admin');
-  return { success: true };
-}
-
-export async function registerProduction(
-  productId: string,
-  batches: number,
-  notes?: string
-): Promise<{ success: boolean; alerts?: string[]; error?: string }> {
-  const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const alerts: string[] = [];
-
-  // Get product with batch_size
-  const { data: product } = await supabase
-    .from('products')
-    .select('id, name, stock_quantity, batch_size')
-    .eq('id', productId)
-    .single();
-
-  if (!product) return { success: false, error: 'Producto no encontrado.' };
-
-  const unitsProduced = batches * (product.batch_size || 1);
-
-  // Get recipe
-  const { data: recipe } = await supabase
-    .from('recipe_items')
-    .select('*, ingredient:ingredients(*)')
-    .eq('product_id', productId);
-
-  // Deduct ingredients
-  if (recipe && recipe.length > 0) {
-    for (const item of recipe) {
-      const consumption = item.quantity_per_batch * batches;
-      const ingredient = item.ingredient as Ingredient;
-
-      const newStock = ingredient.stock_quantity - consumption;
-
-      await supabase
-        .from('ingredients')
-        .update({ stock_quantity: newStock })
-        .eq('id', item.ingredient_id);
-
-      await supabase.from('stock_movements').insert({
-        reference_type: 'ingredient',
-        reference_id: item.ingredient_id,
-        movement_type: 'production_consumption',
-        quantity: -consumption,
-        notes: `Producción: ${batches} lote(s) de ${product.name}`,
-        created_by: user?.id || null,
-      });
-
-      if (newStock < ingredient.min_stock_quantity) {
-        alerts.push(`Stock bajo de ${ingredient.name}: quedan ${newStock} ${ingredient.unit}`);
-      }
-    }
-  } else {
-    alerts.push(`${product.name} no tiene receta cargada. No se descontaron ingredientes.`);
-  }
-
-  // Add produced units to product stock
   await supabase
     .from('products')
-    .update({ stock_quantity: product.stock_quantity + unitsProduced })
+    .update({ batch_size: Math.max(1, batchSize) })
     .eq('id', productId);
 
-  await supabase.from('stock_movements').insert({
-    reference_type: 'product',
-    reference_id: productId,
-    movement_type: 'production',
-    quantity: unitsProduced,
-    notes: notes || `Producción: ${batches} lote(s) = ${unitsProduced} unidades`,
-    created_by: user?.id || null,
-  });
+  // Reemplazo completo: es más simple y más fiable que diferenciar altas/bajas.
+  await supabase.from('recipe_items').delete().eq('product_id', productId);
+
+  const valid = items.filter((item) => item.ingredient_id && item.quantity_per_batch > 0);
+  if (valid.length > 0) {
+    const { error } = await supabase
+      .from('recipe_items')
+      .insert(valid.map((item) => ({ ...item, product_id: productId })));
+    if (error) return { success: false, error: 'No se pudo guardar la receta.' };
+  }
 
   revalidatePath(`/admin/productos/${productId}`);
-  revalidatePath('/admin/ingredientes');
-  revalidatePath('/admin');
-  return { success: true, alerts: alerts.length > 0 ? alerts : undefined };
+  revalidatePath('/admin/stock');
+  return { success: true };
 }
 
-// === Stock Movements History ===
-
-export async function getStockMovements(
-  referenceType: 'ingredient' | 'product',
-  referenceId: string,
-  limit = 20
-): Promise<StockMovement[]> {
-  const supabase = await createServerClient();
-  const { data } = await supabase
-    .from('stock_movements')
-    .select('*')
-    .eq('reference_type', referenceType)
-    .eq('reference_id', referenceId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  return (data as StockMovement[]) || [];
+function revalidateStockViews(ingredientId?: string) {
+  revalidatePath('/admin');
+  revalidatePath('/admin/stock');
+  if (ingredientId) revalidatePath(`/admin/stock/${ingredientId}`);
 }

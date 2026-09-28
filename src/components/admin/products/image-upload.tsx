@@ -90,7 +90,7 @@ export function ImageUpload({ value, onChange }: ImageUploadProps) {
             )}
           </div>
 
-          {/* Acciones claras para Valentina */}
+          {/* Acciones explícitas: subir y quitar, sin menús escondidos */}
           <div className="flex gap-2">
             <Button
               type="button"

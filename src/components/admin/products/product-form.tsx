@@ -47,11 +47,13 @@ export function ProductForm({ product, categories }: ProductFormProps) {
           sale_unit: product.sale_unit,
           min_quantity: product.min_quantity,
           min_advance_hours: product.min_advance_hours,
+          batch_size: product.batch_size,
           is_active: product.is_active,
         }
       : {
           sale_unit: 'unidad',
           min_quantity: 1,
+          batch_size: 1,
           is_active: true,
         },
   });
@@ -81,12 +83,12 @@ export function ProductForm({ product, categories }: ProductFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-2xl">
+    <form onSubmit={handleSubmit(onSubmit)} className="surface max-w-2xl space-y-6 p-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="name">Nombre *</Label>
           <Input id="name" {...register('name')} />
-          {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
+          {errors.name && <p className="text-sm text-rose-600">{errors.name.message}</p>}
         </div>
 
         <div className="space-y-2">
@@ -116,7 +118,7 @@ export function ProductForm({ product, categories }: ProductFormProps) {
             step="0.01"
             {...register('price', { valueAsNumber: true })}
           />
-          {errors.price && <p className="text-sm text-red-600">{errors.price.message}</p>}
+          {errors.price && <p className="text-sm text-rose-600">{errors.price.message}</p>}
         </div>
 
         <div className="space-y-2">
@@ -128,11 +130,12 @@ export function ProductForm({ product, categories }: ProductFormProps) {
             placeholder="Ej: 800"
             {...register('cost_override', { valueAsNumber: true })}
           />
-          <p className="text-xs text-stone-400">
-            Cuánto te cuesta producir 1 unidad. Se usa para calcular margen.
+          <p className="text-xs text-stone-500">
+            Cuánto te cuesta producir una unidad. Si lo dejás vacío, se calcula desde
+            la receta.
           </p>
           {errors.cost_override && (
-            <p className="text-sm text-red-600">{errors.cost_override.message}</p>
+            <p className="text-sm text-rose-600">{errors.cost_override.message}</p>
           )}
         </div>
 
@@ -148,6 +151,20 @@ export function ProductForm({ product, categories }: ProductFormProps) {
             type="number"
             {...register('min_quantity', { valueAsNumber: true })}
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="batch_size">Unidades por lote</Label>
+          <Input
+            id="batch_size"
+            type="number"
+            min={1}
+            {...register('batch_size', { valueAsNumber: true })}
+          />
+          <p className="text-xs text-stone-500">
+            Cuántas unidades salen de una tanda de producción. Define el costo unitario
+            cuando el producto tiene receta cargada.
+          </p>
         </div>
 
         <div className="space-y-2 sm:col-span-2">
@@ -185,7 +202,7 @@ export function ProductForm({ product, categories }: ProductFormProps) {
             {...register('is_active')}
           />
           <Label htmlFor="is_active" className="font-normal">
-            Producto activo (visible en catálogo)
+            Producto activo (visible en el catálogo)
           </Label>
         </div>
       </div>

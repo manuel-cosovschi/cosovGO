@@ -2,19 +2,20 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Plus } from 'lucide-react';
+import { ImageIcon, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/components/cart/cart-provider';
-import { formatPrice } from '@/lib/utils';
-import type { PackageDetail } from '@/types';
+import { useMoney } from '@/components/admin/business-provider';
+import type { Package } from '@/types';
 import { toast } from 'sonner';
 
 interface PackageCardProps {
-  pkg: PackageDetail;
+  pkg: Package;
 }
 
 export function PackageCard({ pkg }: PackageCardProps) {
   const { addItem } = useCart();
+  const money = useMoney();
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -47,7 +48,7 @@ export function PackageCard({ pkg }: PackageCardProps) {
           />
         ) : (
           <div className="flex h-full items-center justify-center text-stone-300">
-            <span className="text-4xl">📦</span>
+            <ImageIcon className="h-8 w-8 text-stone-300" />
           </div>
         )}
       </div>
@@ -59,14 +60,9 @@ export function PackageCard({ pkg }: PackageCardProps) {
         {pkg.description && (
           <p className="mt-1 text-sm text-stone-500 line-clamp-2">{pkg.description}</p>
         )}
-        {pkg.items.length > 0 && (
-          <p className="mt-2 text-xs text-stone-400">
-            {pkg.items.length} productos incluidos
-          </p>
-        )}
         <div className="mt-3 flex items-center justify-between">
           <span className="text-lg font-semibold text-stone-900">
-            {formatPrice(pkg.price)}
+            {money(pkg.price)}
           </span>
           <Button size="icon" variant="outline" onClick={handleAddToCart} aria-label="Agregar">
             <Plus className="h-4 w-4" />

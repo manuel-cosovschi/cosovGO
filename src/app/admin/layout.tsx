@@ -1,22 +1,21 @@
-'use client';
+import { getCurrentBusiness } from '@/lib/business';
+import { AdminShell } from '@/components/layout/admin-shell';
+import { BusinessProvider } from '@/components/admin/business-provider';
 
-import { usePathname } from 'next/navigation';
-import { AdminSidebar } from '@/components/layout/admin-sidebar';
-
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const isLoginPage = pathname === '/admin/login';
-
-  if (isLoginPage) {
-    return <>{children}</>;
-  }
+/**
+ * Shell del panel.
+ *
+ * El negocio se resuelve una sola vez acá y baja por contexto: ninguna página
+ * tiene que volver a pedirlo sólo para saber en qué moneda mostrar un importe.
+ * La pantalla de login vive bajo /admin pero no usa este shell — tiene su
+ * propio layout, así que acá siempre hay sesión.
+ */
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const business = await getCurrentBusiness();
 
   return (
-    <div className="min-h-screen bg-stone-50">
-      <AdminSidebar />
-      <div className="lg:pl-64">
-        <main className="p-6 lg:p-8">{children}</main>
-      </div>
-    </div>
+    <BusinessProvider business={business}>
+      <AdminShell business={business}>{children}</AdminShell>
+    </BusinessProvider>
   );
 }

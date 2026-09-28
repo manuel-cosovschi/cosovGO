@@ -25,24 +25,28 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Use getSession() instead of getUser() to avoid HTTP call to Supabase
-  // getSession() reads the JWT locally - much faster, avoids MIDDLEWARE_INVOCATION_TIMEOUT
-  // Actual user verification happens in server components/actions
+  // getSession() lee el JWT localmente en vez de pegarle a Supabase en cada
+  // request: el middleware corre en todas las navegaciones y una llamada HTTP
+  // acá se paga en latencia. La verificación real del usuario la hacen los
+  // server components y las server actions con getUser().
   const { data: { session } } = await supabase.auth.getSession();
 
-  // Protect admin routes (except login)
-  if (request.nextUrl.pathname.startsWith('/admin') && !request.nextUrl.pathname.startsWith('/admin/login')) {
-    if (!session) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/admin/login';
-      return NextResponse.redirect(url);
-    }
+  const { pathname } = request.nextUrl;
+
+  // El panel entero exige sesión
+  if (pathname.startsWith('/admin') && !session) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    // Volvemos a donde el usuario quería ir después de autenticarse
+    url.searchParams.set('next', pathname);
+    return NextResponse.redirect(url);
   }
 
-  // Redirect logged-in users away from login
-  if (request.nextUrl.pathname === '/admin/login' && session) {
+  // Con sesión abierta el login no tiene sentido
+  if (pathname === '/login' && session) {
     const url = request.nextUrl.clone();
     url.pathname = '/admin';
+    url.search = '';
     return NextResponse.redirect(url);
   }
 
@@ -50,5 +54,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/login'],
 };

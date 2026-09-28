@@ -2,10 +2,10 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Plus } from 'lucide-react';
+import { ImageIcon, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/components/cart/cart-provider';
-import { formatPrice } from '@/lib/utils';
+import { useMoney } from '@/components/admin/business-provider';
 import type { Product } from '@/types';
 import { toast } from 'sonner';
 
@@ -15,6 +15,7 @@ interface ProductCardProps {
 
 export function ProductCard({ product }: ProductCardProps) {
   const { addItem } = useCart();
+  const money = useMoney();
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -47,7 +48,7 @@ export function ProductCard({ product }: ProductCardProps) {
           />
         ) : (
           <div className="flex h-full items-center justify-center text-stone-300">
-            <span className="text-4xl">🍰</span>
+            <ImageIcon className="h-8 w-8 text-stone-300" />
           </div>
         )}
       </div>
@@ -63,7 +64,7 @@ export function ProductCard({ product }: ProductCardProps) {
         )}
         <div className="mt-3 flex items-center justify-between">
           <span className="text-lg font-semibold text-stone-900">
-            {formatPrice(product.price)}
+            {money(product.price)}
             <span className="text-xs font-normal text-stone-400 ml-1">
               / {product.sale_unit}
             </span>

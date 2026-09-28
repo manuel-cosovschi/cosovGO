@@ -1,34 +1,55 @@
 'use server';
 
-import { createServerClient } from '@/lib/supabase/server';
-import { slugify } from '@/lib/utils';
 import { revalidatePath } from 'next/cache';
-import type { Package, PackageDetail, CreatePackageInput, UpdatePackageInput } from '@/types';
+import { createServerClient } from '@/lib/supabase/server';
+import { requireBusinessId } from '@/lib/business';
+import { slugify } from '@/lib/utils';
+import type { CreatePackageInput, Package, PackageDetail, UpdatePackageInput } from '@/types';
 
-export async function listAllPackages(): Promise<PackageDetail[]> {
+/**
+ * Combos: un precio único para un conjunto de productos (box de desayuno,
+ * mesa dulce, menú semanal de viandas). Comparten catálogo y stock con los
+ * productos que los componen.
+ */
+
+export async function listPackages(): Promise<PackageDetail[]> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
+
   const { data: packages } = await supabase
     .from('packages')
     .select('*')
-    .order('sort_order');
+    .eq('business_id', businessId)
+    .order('sort_order')
+    .order('name');
 
-  if (!packages || packages.length === 0) return [];
+  if (!packages?.length) return [];
 
-  const packageIds = packages.map((p) => p.id);
   const { data: items } = await supabase
     .from('package_items')
     .select('*, product:products(id, name, price)')
-    .in('package_id', packageIds);
+    .in(
+      'package_id',
+      packages.map((p) => p.id)
+    );
 
   return packages.map((pkg) => ({
     ...pkg,
-    items: (items || []).filter((i) => i.package_id === pkg.id),
+    items: (items || []).filter((item) => item.package_id === pkg.id),
   })) as PackageDetail[];
 }
 
-export async function getPackageById(id: string): Promise<PackageDetail | null> {
+export async function getPackage(id: string): Promise<PackageDetail | null> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
-  const { data: pkg } = await supabase.from('packages').select('*').eq('id', id).single();
+
+  const { data: pkg } = await supabase
+    .from('packages')
+    .select('*')
+    .eq('id', id)
+    .eq('business_id', businessId)
+    .maybeSingle();
+
   if (!pkg) return null;
 
   const { data: items } = await supabase
@@ -39,24 +60,22 @@ export async function getPackageById(id: string): Promise<PackageDetail | null> 
   return { ...pkg, items: items || [] } as PackageDetail;
 }
 
-export async function createPackage(input: CreatePackageInput): Promise<{
-  success: boolean;
-  pkg?: Package;
-  error?: string;
-}> {
-  if (!input.name?.trim()) return { success: false, error: 'El nombre es obligatorio.' };
-  if (!input.price || input.price <= 0) return { success: false, error: 'El precio debe ser mayor a 0.' };
-  if (!input.items || input.items.length === 0) return { success: false, error: 'Agregá al menos un producto.' };
+export async function createPackage(
+  input: CreatePackageInput
+): Promise<{ success: boolean; pkg?: Package; error?: string }> {
+  const error = validatePackage(input);
+  if (error) return { success: false, error };
 
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
-  const slug = slugify(input.name);
 
-  const { data: pkg, error } = await supabase
+  const { data: pkg, error: insertError } = await supabase
     .from('packages')
     .insert({
-      name: input.name,
-      slug,
-      description: input.description || null,
+      business_id: businessId,
+      name: input.name.trim(),
+      slug: slugify(input.name),
+      description: input.description?.trim() || null,
       image_url: input.image_url || null,
       price: input.price,
       is_editable: input.is_editable || false,
@@ -65,12 +84,11 @@ export async function createPackage(input: CreatePackageInput): Promise<{
     .select()
     .single();
 
-  if (error) {
-    if (error.code === '23505') return { success: false, error: 'Ya existe un paquete con ese nombre.' };
-    return { success: false, error: 'Error al crear el paquete.' };
+  if (insertError || !pkg) {
+    if (insertError?.code === '23505') return { success: false, error: 'Ya existe un combo con ese nombre.' };
+    return { success: false, error: 'No se pudo crear el combo.' };
   }
 
-  // Insert items
   await supabase.from('package_items').insert(
     input.items.map((item) => ({
       package_id: pkg.id,
@@ -79,34 +97,37 @@ export async function createPackage(input: CreatePackageInput): Promise<{
     }))
   );
 
-  revalidatePath('/admin/paquetes');
-  revalidatePath('/paquetes');
+  revalidatePackageViews();
   return { success: true, pkg: pkg as Package };
 }
 
-export async function updatePackage(id: string, input: UpdatePackageInput): Promise<{
-  success: boolean;
-  error?: string;
-}> {
+export async function updatePackage(
+  id: string,
+  input: UpdatePackageInput
+): Promise<{ success: boolean; error?: string }> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
 
-  const updateData: Record<string, unknown> = {};
+  const patch: Record<string, unknown> = {};
   if (input.name) {
-    updateData.name = input.name;
-    updateData.slug = slugify(input.name);
+    patch.name = input.name.trim();
+    patch.slug = slugify(input.name);
   }
-  if (input.description !== undefined) updateData.description = input.description || null;
-  if (input.image_url !== undefined) updateData.image_url = input.image_url || null;
-  if (input.price !== undefined) updateData.price = input.price;
-  if (input.is_editable !== undefined) updateData.is_editable = input.is_editable;
-  if (input.is_active !== undefined) updateData.is_active = input.is_active;
+  if (input.description !== undefined) patch.description = input.description?.trim() || null;
+  if (input.image_url !== undefined) patch.image_url = input.image_url || null;
+  if (input.price !== undefined) patch.price = input.price;
+  if (input.is_editable !== undefined) patch.is_editable = input.is_editable;
+  if (input.is_active !== undefined) patch.is_active = input.is_active;
 
-  if (Object.keys(updateData).length > 0) {
-    const { error } = await supabase.from('packages').update(updateData).eq('id', id);
-    if (error) return { success: false, error: 'Error al actualizar el paquete.' };
+  if (Object.keys(patch).length > 0) {
+    const { error } = await supabase
+      .from('packages')
+      .update(patch)
+      .eq('id', id)
+      .eq('business_id', businessId);
+    if (error) return { success: false, error: 'No se pudo actualizar el combo.' };
   }
 
-  // Update items if provided
   if (input.items) {
     await supabase.from('package_items').delete().eq('package_id', id);
     if (input.items.length > 0) {
@@ -120,30 +141,63 @@ export async function updatePackage(id: string, input: UpdatePackageInput): Prom
     }
   }
 
-  revalidatePath('/admin/paquetes');
-  revalidatePath('/paquetes');
+  revalidatePackageViews(id);
   return { success: true };
 }
 
-export async function togglePackageActive(id: string): Promise<{ success: boolean; error?: string }> {
+export async function togglePackageActive(
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
-  const { data: pkg } = await supabase.from('packages').select('is_active').eq('id', id).single();
-  if (!pkg) return { success: false, error: 'Paquete no encontrado.' };
 
-  const { error } = await supabase.from('packages').update({ is_active: !pkg.is_active }).eq('id', id);
-  if (error) return { success: false, error: 'Error al cambiar estado.' };
+  const { data: pkg } = await supabase
+    .from('packages')
+    .select('is_active')
+    .eq('id', id)
+    .eq('business_id', businessId)
+    .maybeSingle();
 
-  revalidatePath('/admin/paquetes');
-  revalidatePath('/paquetes');
+  if (!pkg) return { success: false, error: 'Combo no encontrado.' };
+
+  const { error } = await supabase
+    .from('packages')
+    .update({ is_active: !pkg.is_active })
+    .eq('id', id);
+
+  if (error) return { success: false, error: 'No se pudo cambiar el estado.' };
+
+  revalidatePackageViews(id);
   return { success: true };
 }
 
 export async function deletePackage(id: string): Promise<{ success: boolean; error?: string }> {
+  const businessId = await requireBusinessId();
   const supabase = await createServerClient();
-  const { error } = await supabase.from('packages').delete().eq('id', id);
-  if (error) return { success: false, error: 'Error al eliminar el paquete.' };
 
-  revalidatePath('/admin/paquetes');
-  revalidatePath('/paquetes');
+  const { error } = await supabase
+    .from('packages')
+    .delete()
+    .eq('id', id)
+    .eq('business_id', businessId);
+
+  if (error) {
+    return { success: false, error: 'No se pudo eliminar. Puede estar usado en un pedido: desactivalo.' };
+  }
+
+  revalidatePackageViews();
   return { success: true };
+}
+
+function validatePackage(input: CreatePackageInput): string | null {
+  if (!input.name?.trim()) return 'El nombre es obligatorio.';
+  if (!input.price || input.price <= 0) return 'El precio tiene que ser mayor a cero.';
+  if (!input.items?.length) return 'Agregá al menos un producto al combo.';
+  return null;
+}
+
+function revalidatePackageViews(id?: string) {
+  revalidatePath('/admin/combos');
+  if (id) revalidatePath(`/admin/combos/${id}`);
+  revalidatePath('/catalogo');
 }

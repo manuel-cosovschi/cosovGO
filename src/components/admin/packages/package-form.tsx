@@ -84,7 +84,7 @@ export function PackageForm({ pkg, products }: PackageFormProps) {
 
       if (result.success) {
         toast.success(isEditing ? 'Paquete actualizado' : 'Paquete creado');
-        router.push('/admin/paquetes');
+        router.push('/admin/combos');
         router.refresh();
       } else {
         toast.error(result.error || 'Error al guardar');
