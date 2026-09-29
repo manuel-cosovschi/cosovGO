@@ -57,6 +57,20 @@ export const WHATSAPP_URL = WHATSAPP_NUMBER
   ? `https://wa.me/${WHATSAPP_NUMBER}?text=${WHATSAPP_MESSAGE}`
   : '';
 
+/**
+ * La URL absoluta del sitio. Hace falta en los mails, donde un link relativo no
+ * lleva a ningún lado. En Vercel sale de la variable del deploy de producción,
+ * así que en el caso normal no hay que cargar nada.
+ */
+export const SITE_URL = (() => {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, '');
+  if (explicit) return explicit;
+
+  const vercel =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim();
+  return vercel ? `https://${vercel.replace(/\/$/, '')}` : '';
+})();
+
 export const EMAIL_URL = CONTACT_EMAIL
   ? `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Consulta sobre GastroOS')}`
   : '';

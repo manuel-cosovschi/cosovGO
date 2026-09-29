@@ -3,6 +3,12 @@
 import { createServerClient } from '@/lib/supabase/server';
 import { getStorefrontBusiness } from '@/lib/business';
 import { createOrderForBusiness } from '@/actions/orders';
+import {
+  loadOrderLines,
+  sendNewOrderNotification,
+  sendOrderConfirmation,
+} from '@/lib/order-emails';
+import { SITE_URL } from '@/lib/marketing';
 import type {
   Category,
   CreateOrderInput,
@@ -134,7 +140,42 @@ export async function submitStorefrontOrder(
   if (!business) {
     return { success: false, error: 'La tienda no está disponible en este momento.' };
   }
-  return createOrderForBusiness(business.id, { ...input, status: 'pending' }, 'storefront');
+
+  const result = await createOrderForBusiness(
+    business.id,
+    { ...input, status: 'pending' },
+    'storefront'
+  );
+  if (!result.success || !result.order) return result;
+
+  // Los mails van sin `await` a propósito: quien acaba de encargar no tiene
+  // por qué esperar a que Resend acepte un mensaje, y si el envío falla el
+  // pedido ya está guardado igual.
+  sendOrderMails(business, result.order).catch((error) =>
+    console.error('[submitStorefrontOrder] no se pudieron mandar los mails:', error)
+  );
+
+  return result;
+}
+
+/**
+ * Los dos mails de un pedido de la tienda: la confirmación a quien encargó y
+ * el aviso al negocio.
+ *
+ * Las líneas se releen de la base y no se toman de la entrada: lo que el mail
+ * dice tiene que ser lo que quedó guardado, con los precios del catálogo.
+ */
+async function sendOrderMails(business: StorefrontBusiness, order: Order) {
+  const items = await loadOrderLines(order.id);
+  if (items.length === 0) return;
+
+  const tracking = SITE_URL ? `${SITE_URL}/pedido/seguimiento/${order.order_number}` : undefined;
+  const admin = SITE_URL ? `${SITE_URL}/admin/pedidos/${order.id}` : undefined;
+
+  await Promise.all([
+    sendOrderConfirmation({ business, order, items, trackingUrl: tracking }),
+    sendNewOrderNotification({ business, order, items, adminUrl: admin }),
+  ]);
 }
 
 /**
