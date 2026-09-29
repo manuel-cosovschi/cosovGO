@@ -2,7 +2,11 @@
 
 import { createServerClient } from '@/lib/supabase/server';
 import { orderSchema, manualOrderSchema, type ManualOrderValues } from '@/lib/validations/order';
-import { sendNewOrderNotification, sendOrderStatusUpdate } from '@/lib/emails';
+import {
+  sendNewOrderNotification,
+  sendOrderConfirmation,
+  sendOrderStatusUpdate,
+} from '@/lib/emails';
 import { appendOrderToSheets } from '@/lib/google-sheets';
 import { getProductUnitCosts, getPackageUnitCosts } from '@/lib/production-cost';
 import { quantityError } from '@/lib/utils';
@@ -186,9 +190,20 @@ export async function createOrder(input: CreateOrderInput): Promise<{
     notes: 'Pedido creado',
   });
 
-  // Emails (non-blocking). Al cliente NO se le manda nada todavía: solo recibe
-  // un mail cuando Valen aprueba el pedido (ver updateOrderStatus). Acá solo se
-  // notifica a Valen del nuevo pedido para que lo revise.
+  // Emails (non-blocking). Van sin await y con catch: el pedido ya está
+  // guardado, y un mail que no sale no puede hacer que falle.
+  //
+  // Al cliente se le manda el detalle apenas encarga. Antes no se le mandaba
+  // nada hasta que Valen aprobaba, pero la pantalla de confirmación le promete
+  // un mail y quedaba esperándolo. El texto dice "recibido" y "te
+  // confirmaremos la disponibilidad": informa sin prometer que el pedido se va
+  // a hacer, que es lo que Valen todavía tiene que decidir.
+  if (order.email) {
+    sendOrderConfirmation(order.email, order as Order, orderItems as OrderItem[]).catch(
+      (err) => console.error('[email] confirmación al cliente falló:', err)
+    );
+  }
+
   sendNewOrderNotification(order as Order, orderItems as OrderItem[]).catch(
     (err) => console.error('[email] notif admin (Valen) falló:', err)
   );
