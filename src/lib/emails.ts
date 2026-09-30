@@ -13,7 +13,8 @@ import { formatPrice, formatDate } from './utils';
 //   MAIL_FROM       — remitente, con un dominio verificado en Resend
 //                     (Domains > Add Domain). Formato:
 //                     "COSOV. <pedidos@tudominio.com>"
-//   ADMIN_EMAIL     — a dónde llegan los avisos de pedido nuevo
+//   ADMIN_EMAIL     — a dónde llegan los avisos de pedido nuevo, y a dónde
+//                     contesta el cliente si responde un mail (Reply-To)
 //
 // BREVO_API_KEY, FROM_EMAIL y FROM_NAME ya no se usan: se pueden borrar del
 // hosting.
@@ -27,6 +28,8 @@ interface MailParams {
   text: string;
   /** Para distinguir los avisos internos de los que ve el cliente. */
   senderName?: string;
+  /** A dónde va la respuesta si el destinatario contesta. */
+  replyTo?: string;
 }
 
 /**
@@ -55,6 +58,7 @@ async function sendEmail(params: MailParams) {
       to: [params.to],
       subject: params.subject,
       text: params.text,
+      ...(params.replyTo ? { reply_to: params.replyTo } : {}),
     }),
   });
 
@@ -81,6 +85,7 @@ export async function sendOrderConfirmation(
 
   await sendEmail({
     to: toEmail,
+    replyTo: ADMIN_EMAIL,
     subject: `Pedido #${order.order_number} recibido — COSOV.`,
     text: `¡Hola ${order.contact_name}!
 
@@ -124,6 +129,8 @@ Margen estimado: ${formatPrice(margin)}${someMissingCost ? '\n(falta cargar cost
   await sendEmail({
     senderName: 'COSOV. Sistema',
     to: ADMIN_EMAIL,
+    // Contestar este aviso le escribe al cliente, no al sistema.
+    replyTo: order.email || undefined,
     subject: `Nuevo pedido #${order.order_number} — ${order.contact_name || order.business_name}`,
     text: `Nuevo pedido recibido:
 
@@ -194,6 +201,7 @@ export async function sendOrderStatusUpdate(
 
   await sendEmail({
     to: toEmail,
+    replyTo: ADMIN_EMAIL,
     subject: tpl.subject,
     text: `¡Hola ${data.contactName}!
 
