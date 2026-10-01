@@ -44,8 +44,8 @@ export default function DebugEmailPage() {
       <div>
         <h1 className="text-2xl font-bold text-stone-900">Diagnóstico de email</h1>
         <p className="mt-1 text-sm text-stone-500">
-          Verifica la configuración de Brevo y manda un mail de prueba.
-          Si falla, mostramos el error exacto que devuelve Brevo.
+          Verifica la configuración de Resend y manda un mail de prueba.
+          Si falla, mostramos el error exacto que devuelve Resend.
         </p>
       </div>
 
@@ -86,13 +86,13 @@ export default function DebugEmailPage() {
             {result && 'ok' in result && result.ok === false && (
               <p className="mt-3 text-sm text-red-700">
                 ❌ Envío falló — mirá el campo `body` de arriba para el
-                mensaje exacto de Brevo.
+                mensaje exacto de Resend. Lo más común es que el dominio de MAIL_FROM no esté verificado.
               </p>
             )}
             {result && 'ok' in result && result.ok === true && (
               <p className="mt-3 text-sm text-emerald-700">
                 ✅ Envío OK — revisá la bandeja de entrada (y la carpeta
-                de spam). El `messageId` en `body` confirma que Brevo
+                de spam). El `id` en `body` confirma que Resend
                 aceptó el mail.
               </p>
             )}

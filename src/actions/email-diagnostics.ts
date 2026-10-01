@@ -1,14 +1,18 @@
 'use server';
 
-// Diagnóstico de email — herramienta temporal para debuggear la integración
-// con Brevo. Devuelve al UI la presencia/forma de las env vars y el resultado
-// exacto del intento de envío (incluyendo el cuerpo de error de Brevo).
-// No loguea la API key completa; sólo prefijo/sufijo para identificarla.
+// Diagnóstico de email desde /admin/debug-email.
+//
+// Devuelve qué variables están cargadas y el resultado exacto del intento de
+// envío, con el cuerpo del error de Resend incluido. Sirve para el caso más
+// común y más difícil de adivinar desde afuera: el dominio de MAIL_FROM no
+// está verificado, y Resend rechaza con un mensaje que sólo se ve acá.
+//
+// La API key nunca se devuelve entera: sólo prefijo y sufijo para poder
+// identificar cuál está cargada.
 
 export async function diagnoseEmail(toOverride?: string) {
-  const apiKey = process.env.BREVO_API_KEY;
-  const fromEmail = process.env.FROM_EMAIL;
-  const fromName = process.env.FROM_NAME || 'COSOV.';
+  const apiKey = process.env.RESEND_API_KEY;
+  const mailFrom = process.env.MAIL_FROM;
   const adminEmail = process.env.ADMIN_EMAIL;
 
   const maskKey = (k: string | undefined) => {
@@ -18,40 +22,42 @@ export async function diagnoseEmail(toOverride?: string) {
   };
 
   const env = {
-    BREVO_API_KEY: maskKey(apiKey),
-    FROM_EMAIL: fromEmail || '(no seteada)',
-    FROM_NAME: fromName,
+    RESEND_API_KEY: maskKey(apiKey),
+    MAIL_FROM: mailFrom || '(no seteada)',
     ADMIN_EMAIL: adminEmail || '(no seteada)',
   };
 
-  const to = toOverride || adminEmail || fromEmail;
+  const to = toOverride || adminEmail;
   if (!apiKey) {
-    return { env, attempt: null, error: 'BREVO_API_KEY no está seteada en Vercel.' };
+    return { env, attempt: null, error: 'RESEND_API_KEY no está seteada en Vercel.' };
   }
-  if (!fromEmail) {
-    return { env, attempt: null, error: 'FROM_EMAIL no está seteada en Vercel.' };
+  if (!mailFrom) {
+    return {
+      env,
+      attempt: null,
+      error: 'MAIL_FROM no está seteada en Vercel. Ejemplo: COSOV. <pedidos@tudominio.com>',
+    };
   }
   if (!to) {
     return { env, attempt: null, error: 'No hay destinatario (seteá ADMIN_EMAIL o pasá uno).' };
   }
 
-  const attempt = { to, fromEmail, fromName };
+  const attempt = { to, from: mailFrom };
 
   try {
-    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'api-key': apiKey,
+        authorization: `Bearer ${apiKey}`,
         'content-type': 'application/json',
-        accept: 'application/json',
       },
       body: JSON.stringify({
-        sender: { name: fromName, email: fromEmail },
-        to: [{ email: to }],
+        from: mailFrom,
+        to: [to],
         subject: 'Test COSOV. — diagnóstico',
-        textContent:
+        text:
           'Este es un mail de prueba generado desde el admin de COSOV. ' +
-          'Si recibiste esto, la integración con Brevo funciona correctamente.',
+          'Si recibiste esto, el envío por Resend funciona correctamente.',
       }),
     });
 
@@ -60,7 +66,7 @@ export async function diagnoseEmail(toOverride?: string) {
     try {
       bodyJson = JSON.parse(bodyText);
     } catch {
-      /* keep as text */
+      /* se deja como texto */
     }
 
     return {
@@ -69,7 +75,7 @@ export async function diagnoseEmail(toOverride?: string) {
       status: res.status,
       ok: res.ok,
       body: bodyJson ?? bodyText,
-      error: res.ok ? null : `Brevo respondió ${res.status}`,
+      error: res.ok ? null : `Resend respondió ${res.status}`,
     };
   } catch (err) {
     return {
